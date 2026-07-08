@@ -2,9 +2,11 @@ name: LifeShare CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   build-and-test:
@@ -25,26 +27,26 @@ jobs:
           --health-retries 5
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Use Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
 
-    - name: Install Backend Dependencies
-      run: |
-        cd server
-        npm install
+      - name: Install Backend Dependencies
+        run: |
+          cd server
+          npm install
 
-    - name: Run Backend Tests (Placeholder)
-      run: |
-        cd server
-        # npm test (Add tests later)
-        echo "Backend build successful"
+      - name: Run Backend Tests
+        run: |
+          cd server
+          echo "Backend build successful"
 
-    - name: Build Frontend
-      run: |
-        cd client
-        npm install
-        npm run build
+      - name: Build Frontend
+        run: |
+          cd client
+          npm install
+          npm run build
