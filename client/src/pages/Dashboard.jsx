@@ -15,21 +15,24 @@ const Dashboard = () => {
   const [equipment, setEquipment] = useState([]);
   const [blood, setBlood] = useState([]);
   const [incomingRequests, setIncomingRequests] = useState([]);
+  const [myRequests, setMyRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   const fetchData = async () => {
     try {
-      const [orgRes, equipRes, bloodRes, reqRes] = await Promise.all([
+      const [orgRes, equipRes, bloodRes, reqRes, myReqRes] = await Promise.all([
         api.get('/resources/organs'),
         api.get('/resources/equipment'),
         api.get('/resources/blood'),
-        api.get('/requests/incoming')
+        api.get('/requests/incoming'),
+        api.get('/requests/my')
       ]);
       setOrgans(orgRes.data);
       setEquipment(equipRes.data);
       setBlood(bloodRes.data);
       setIncomingRequests(reqRes.data);
+      setMyRequests(myReqRes.data);
     } catch (err) {
       toast.error('Failed to fetch real-time data.');
     } finally {
@@ -346,18 +349,43 @@ const Dashboard = () => {
             </div>
           </section>
 
-          {/* Outgoing Status (Added Section) */}
+          {/* My Resource Requests */}
           <section className="card p-6 space-y-6 border-t-8 border-emerald-600">
              <h2 className="text-lg font-bold text-slate-900 flex items-center justify-between">
               My Resource Requests
-              <Activity className="w-4 h-4 text-emerald-600" />
+              <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs font-bold">{myRequests.length}</span>
             </h2>
-            <div className="space-y-3 text-slate-500 text-sm">
-              <p>Requested resources appear here once donor hospitals accept the match. Check notifications for live updates.</p>
-              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-800 flex items-center gap-2">
-                <Info className="w-4 h-4" />
-                <span>Matches are real-time.</span>
-              </div>
+            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+              {myRequests.length === 0 ? (
+                <div className="text-center py-8 space-y-2 border border-dashed border-slate-100 rounded-xl">
+                  <Package className="w-8 h-8 text-slate-200 mx-auto" />
+                  <p className="text-slate-400 text-xs">No active requests sent.</p>
+                </div>
+              ) : myRequests.map((req) => (
+                <div key={req.id} className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">Case #{req.id.toString().padStart(5, '0')}</span>
+                      <p className="font-bold text-slate-900 capitalize text-sm">{req.resource_type} Request</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${req.status === 'matched' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {req.status}
+                    </span>
+                  </div>
+                  {req.donor_hospital_name && (
+                    <p className="text-xs text-emerald-700 font-medium">✓ Accepted by {req.donor_hospital_name}</p>
+                  )}
+                  <div className="flex justify-between items-center pt-2 text-xs">
+                    <span className="text-slate-400 font-mono">{new Date(req.created_at).toLocaleDateString()}</span>
+                    <Link 
+                      to={`/match/${req.id}`}
+                      className="text-primary-600 hover:text-primary-700 font-bold flex items-center gap-1"
+                    >
+                      Match Details <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
 

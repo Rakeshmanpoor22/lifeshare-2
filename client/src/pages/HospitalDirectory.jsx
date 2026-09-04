@@ -166,11 +166,14 @@ const HospitalDirectory = () => {
   const [showFilters, setShowFilters] = useState(false);
 
   // Filters & search
-  const [searchQ,    setSearchQ]    = useState('');
-  const [state,      setState]      = useState('');
-  const [category,   setCategory]   = useState('');
-  const [emergency,  setEmergency]  = useState('');
-  const [page,       setPage]       = useState(1);
+  const [searchQ,       setSearchQ]       = useState('');
+  const [state,         setState]         = useState('');
+  const [district,      setDistrict]      = useState('');
+  const [category,      setCategory]      = useState('');
+  const [careType,      setCareType]      = useState('');
+  const [medicalSystem, setMedicalSystem] = useState('');
+  const [emergency,     setEmergency]     = useState('');
+  const [page,          setPage]          = useState(1);
 
   // Debounced search input
   const [debouncedQ, setDebouncedQ] = useState('');
@@ -180,7 +183,7 @@ const HospitalDirectory = () => {
   }, [searchQ]);
 
   // Reset page when filters change
-  useEffect(() => { setPage(1); }, [debouncedQ, state, category, emergency]);
+  useEffect(() => { setPage(1); }, [debouncedQ, state, district, category, careType, medicalSystem, emergency]);
 
   // Load states once
   useEffect(() => {
@@ -195,10 +198,13 @@ const HospitalDirectory = () => {
     setError('');
     try {
       const params = { page, limit: 20 };
-      if (debouncedQ) params.q        = debouncedQ;
-      if (state)      params.state    = state;
-      if (category)   params.category = category;
-      if (emergency)  params.emergency = emergency;
+      if (debouncedQ)     params.q              = debouncedQ;
+      if (state)          params.state          = state;
+      if (district)       params.district       = district;
+      if (category)       params.category       = category;
+      if (careType)       params.care_type      = careType;
+      if (medicalSystem)  params.medical_system = medicalSystem;
+      if (emergency)      params.emergency      = emergency;
 
       const r = await axios.get(`${API_BASE}/hospitals`, { params });
       setHospitals(r.data.data || []);
@@ -208,19 +214,22 @@ const HospitalDirectory = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedQ, state, category, emergency]);
+  }, [page, debouncedQ, state, district, category, careType, medicalSystem, emergency]);
 
   useEffect(() => { fetchHospitals(); }, [fetchHospitals]);
 
   const clearFilters = () => {
     setSearchQ('');
     setState('');
+    setDistrict('');
     setCategory('');
+    setCareType('');
+    setMedicalSystem('');
     setEmergency('');
     setPage(1);
   };
 
-  const hasActiveFilters = searchQ || state || category || emergency;
+  const hasActiveFilters = searchQ || state || district || category || careType || medicalSystem || emergency;
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -290,7 +299,7 @@ const HospitalDirectory = () => {
 
         {/* Expanded Filters */}
         {showFilters && (
-          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             {/* State Filter */}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">State</label>
@@ -304,6 +313,18 @@ const HospitalDirectory = () => {
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+            </div>
+
+            {/* District Filter */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">District</label>
+              <input
+                type="text"
+                value={district}
+                onChange={e => setDistrict(e.target.value)}
+                placeholder="e.g. Hyderabad"
+                className="input-field text-sm"
+              />
             </div>
 
             {/* Category Filter */}
@@ -320,22 +341,41 @@ const HospitalDirectory = () => {
               </select>
             </div>
 
-            {/* Emergency Filter */}
+            {/* Care Type Filter */}
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Services</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Care Type</label>
               <select
-                value={emergency}
-                onChange={e => setEmergency(e.target.value)}
+                value={careType}
+                onChange={e => setCareType(e.target.value)}
                 className="input-field text-sm"
               >
-                <option value="">All</option>
-                <option value="yes">Has Emergency Number</option>
+                <option value="">All Care Types</option>
+                <option value="Primary">Primary</option>
+                <option value="Secondary">Secondary</option>
+                <option value="Tertiary">Tertiary</option>
+              </select>
+            </div>
+
+            {/* Medical System Filter */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">System of Medicine</label>
+              <select
+                value={medicalSystem}
+                onChange={e => setMedicalSystem(e.target.value)}
+                className="input-field text-sm"
+              >
+                <option value="">All Systems</option>
+                <option value="Allopathic">Allopathic</option>
+                <option value="Ayurveda">Ayurveda</option>
+                <option value="Homeopathy">Homeopathy</option>
+                <option value="Unani">Unani</option>
+                <option value="Siddha">Siddha</option>
               </select>
             </div>
 
             {/* Clear button */}
             {hasActiveFilters && (
-              <div className="sm:col-span-3 flex justify-end">
+              <div className="sm:col-span-2 lg:col-span-5 flex justify-end">
                 <button
                   onClick={clearFilters}
                   className="text-xs text-slate-500 hover:text-red-600 flex items-center gap-1 transition-colors"

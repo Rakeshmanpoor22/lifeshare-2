@@ -59,7 +59,7 @@ router.get('/my', async (req, res) => {
 
   try {
     const result = await query(`
-      SELECT a.*, b.blood_bank_name, b.city, b.state, b.contact 
+      SELECT a.*, b.blood_bank_name, b.address, b.city, b.district, b.state, b.pincode, b.contact, b.latitude, b.longitude 
       FROM appointments a
       JOIN blood_bank_directory b ON a.blood_bank_directory_id = b.id
       WHERE a.session_token = $1
@@ -70,6 +70,39 @@ router.get('/my', async (req, res) => {
   } catch (err) {
     console.error('Fetch Appointments Error:', err);
     res.status(500).json({ error: 'Failed to fetch appointments.' });
+  }
+});
+
+// GET /api/appointments/:id
+router.get('/:id', async (req, res) => {
+  const authHeader = req.header('Authorization');
+  if (!authHeader || !authHeader.startsWith('Session ')) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid session token.' });
+  }
+
+  const sessionToken = authHeader.replace('Session ', '').trim();
+  const id = parseInt(req.params.id, 10);
+
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid appointment ID.' });
+  }
+
+  try {
+    const result = await query(`
+      SELECT a.*, b.blood_bank_name, b.address, b.city, b.district, b.state, b.pincode, b.contact, b.latitude, b.longitude 
+      FROM appointments a
+      JOIN blood_bank_directory b ON a.blood_bank_directory_id = b.id
+      WHERE a.id = $1 AND a.session_token = $2
+    `, [id, sessionToken]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found or unauthorized.' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Fetch Single Appointment Error:', err);
+    res.status(500).json({ error: 'Failed to fetch appointment details.' });
   }
 });
 

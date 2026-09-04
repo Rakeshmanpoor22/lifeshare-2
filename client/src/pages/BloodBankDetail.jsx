@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, MapPin, Phone, Mail, Globe, Clock, Droplets,
-  AlertCircle, Loader2, Info, Hash, Building2, ExternalLink
+  AlertCircle, Loader2, Info, Hash, Building2, ExternalLink,
+  Navigation, CheckCircle2, Play, Radio, Wifi, WifiOff, XCircle, RotateCcw
 } from 'lucide-react';
 import axios from 'axios';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useSocket } from '../context/SocketContext';
+import toast from 'react-hot-toast';
 
-// ── Custom Icon ──
+// ── Custom Leaflet Icons ──────────────────────────────────────────────────────
 const createCustomIcon = (color, IconComponent) => {
   const html = `
     <div style="background-color: ${color}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid white;">
@@ -26,12 +29,57 @@ const createCustomIcon = (color, IconComponent) => {
     popupAnchor: [0, -32],
   });
 };
+
 const BloodBankIcon = createCustomIcon('#ef4444', '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"></path>');
 
+const userLocationIcon = L.divIcon({
+  html: `<div style="background:#2563eb;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px rgba(37,99,235,0.25);border:3px solid white;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+    </svg>
+  </div>`,
+  className: '',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+});
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Distance & OSRM Routing Helpers ──────────────────────────────────────────
+function getHaversineDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+async function fetchOsrmRoute(userLat, userLng, destLat, destLng) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${userLng},${userLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      const route = data.routes[0];
+      const coords = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      return {
+        coordinates: coords,
+        distanceKm: (route.distance / 1000).toFixed(2),
+        durationMins: Math.round(route.duration / 60),
+      };
+    }
+  } catch (e) {
+    console.warn('OSRM route fetch notice:', e.message);
+  }
+  return null;
+}
+
+// ── General Component Helpers ────────────────────────────────────────────────
 const InfoRow = ({ icon: Icon, label, value, isLink, href }) => {
   if (!value) return null;
   return (
@@ -54,24 +102,17 @@ const InfoRow = ({ icon: Icon, label, value, isLink, href }) => {
   );
 };
 
-const categoryColor = (cat) => {
-  if (!cat) return 'bg-slate-100 text-slate-600';
-  const lc = cat.toLowerCase();
-  if (lc.includes('private'))   return 'bg-blue-50 text-blue-700 border-blue-100';
-  if (lc.includes('government') || lc.includes('public')) return 'bg-emerald-50 text-emerald-700 border-emerald-100';
-  if (lc.includes('ngo'))       return 'bg-purple-50 text-purple-700 border-purple-100';
-  return 'bg-slate-100 text-slate-600 border-slate-200';
-};
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const BloodBankDetail = () => {
   const { id }   = useParams();
   const navigate = useNavigate();
-  const [bank, setBank]     = useState(null);
+  const socket   = useSocket();
+
+  const [bank, setBank]       = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState('');
+  const [error, setError]     = useState('');
   
-  // Phase 9.1 Booking State
+  // Booking State
   const [showBooking, setShowBooking] = useState(false);
   const [bookingForm, setBookingForm] = useState({
     patient_name: '',
@@ -80,6 +121,19 @@ const BloodBankDetail = () => {
     appointment_date: ''
   });
   const [bookingStatus, setBookingStatus] = useState(null);
+  const [confirmedAppt, setConfirmedAppt] = useState(null);
+
+  // Navigation / Tracking State (Phase 9 Step 3B)
+  const [navState, setNavState]           = useState('idle'); // idle | requesting | granted | denied | unavailable | arrived
+  const [userCoords, setUserCoords]       = useState(null);   // { lat, lng }
+  const [routeData, setRouteData]         = useState(null);   // { coordinates, distanceKm, durationMins }
+  const [trackingSession, setTrackingSession] = useState(null);
+  const [isStartingNav, setIsStartingNav] = useState(false);
+
+  const gpsWatchIdRef     = useRef(null);
+  const lastRouteFetchRef = useRef(0);
+  const lastGpsSentRef    = useRef(0);
+  const activeSessionRef  = useRef(null);
 
   useEffect(() => {
     axios.get(`${API_BASE}/blood-banks/${id}`)
@@ -88,24 +142,174 @@ const BloodBankDetail = () => {
       .finally(() => setLoading(false));
   }, [id]);
 
+  // Clean GPS watch on unmount
+  useEffect(() => {
+    return () => {
+      if (gpsWatchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+        gpsWatchIdRef.current = null;
+      }
+    };
+  }, []);
+
+  // Submit Appointment Booking
   const handleBookSubmit = async (e) => {
     e.preventDefault();
     setBookingStatus('submitting');
     try {
       const res = await axios.post(`${API_BASE}/appointments`, {
-        blood_bank_directory_id: id,
+        blood_bank_directory_id: parseInt(id, 10),
         ...bookingForm
       });
-      // Save session token for retrieving appointments later
-      const sessionToken = res.data.appointment.session_token;
-      localStorage.setItem('lifeshare_patient_session', sessionToken);
+      const appt = res.data.appointment;
+      setConfirmedAppt(appt);
+      localStorage.setItem('lifeshare_patient_session', appt.session_token);
       setBookingStatus('success');
+      toast.success('Appointment booked successfully!');
     } catch (err) {
       setBookingStatus('error');
-      console.error(err);
-      alert(err.response?.data?.error || 'Failed to book appointment.');
+      toast.error(err.response?.data?.error || 'Failed to book appointment.');
     }
   };
+
+  // Stop GPS watching
+  const stopGPS = useCallback(() => {
+    if (gpsWatchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      gpsWatchIdRef.current = null;
+    }
+  }, []);
+
+  // Update Route geometry & distance
+  const updateRoute = useCallback(async (uLat, uLng, dLat, dLng) => {
+    const osrm = await fetchOsrmRoute(uLat, uLng, dLat, dLng);
+    if (osrm) {
+      setRouteData(osrm);
+    } else {
+      // Fallback: Haversine straight line
+      const dist = getHaversineDistanceKm(uLat, uLng, dLat, dLng);
+      setRouteData({
+        coordinates: [[uLat, uLng], [dLat, dLng]],
+        distanceKm: dist.toFixed(2),
+        durationMins: Math.round(dist * 2.5), // crude estimate
+      });
+    }
+  }, []);
+
+  // Start Real Navigation (Explicit User Action)
+  const startNavigation = useCallback(async () => {
+    if (!bank || !bank.latitude || !bank.longitude) {
+      toast.error('This blood bank does not have valid coordinates for navigation.');
+      return;
+    }
+    if (!navigator.geolocation) {
+      setNavState('unavailable');
+      toast.error('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setIsStartingNav(true);
+    setNavState('requesting');
+
+    const sessionToken = confirmedAppt?.session_token || localStorage.getItem('lifeshare_patient_session');
+    const apptId = confirmedAppt?.id;
+
+    // Create or load tracking session on backend if appointment ID is known
+    let currentSession = trackingSession;
+    if (apptId && sessionToken) {
+      try {
+        const startRes = await axios.post(`${API_BASE}/tracking/start`, {
+          reference_type: 'blood_appointment',
+          reference_id: apptId,
+        }, {
+          headers: { Authorization: `Session ${sessionToken}` }
+        });
+        currentSession = startRes.data;
+        setTrackingSession(currentSession);
+        activeSessionRef.current = currentSession;
+
+        // Join socket room
+        if (socket && socket.connected) {
+          socket.emit('join_tracking', {
+            tracking_session_id: currentSession.id,
+            token: sessionToken,
+            type: 'patient',
+          });
+        }
+      } catch (err) {
+        console.warn('Backend tracking start notice:', err.response?.data?.error || err.message);
+      }
+    }
+
+    const destLat = parseFloat(bank.latitude);
+    const destLng = parseFloat(bank.longitude);
+
+    // Request Real Browser GPS
+    const watchId = navigator.geolocation.watchPosition(
+      async (pos) => {
+        setIsStartingNav(false);
+        setNavState('granted');
+
+        const uLat = pos.coords.latitude;
+        const uLng = pos.coords.longitude;
+        setUserCoords({ lat: uLat, lng: uLng });
+
+        const now = Date.now();
+
+        // 1. Throttle route updating (re-route every 25s or when moved significantly)
+        if (now - lastRouteFetchRef.current > 25000) {
+          lastRouteFetchRef.current = now;
+          updateRoute(uLat, uLng, destLat, destLng);
+        }
+
+        // 2. Calculate distance to destination
+        const distKm = getHaversineDistanceKm(uLat, uLng, destLat, destLng);
+
+        // 3. Arrival detection threshold: <= 100 meters (0.1 km)
+        if (distKm <= 0.1 && navState !== 'arrived') {
+          setNavState('arrived');
+          toast.success('✓ You have arrived at the selected blood bank!', { duration: 8000 });
+          stopGPS();
+
+          // Update tracking status to arrived on server
+          if (activeSessionRef.current?.id && sessionToken) {
+            try {
+              await axios.post(`${API_BASE}/tracking/${activeSessionRef.current.id}/status`, { status: 'arrived' }, {
+                headers: { Authorization: `Session ${sessionToken}` }
+              });
+            } catch (e) {}
+          }
+          return;
+        }
+
+        // 4. Send GPS location to server (throttled every 20s)
+        if (activeSessionRef.current?.id && sessionToken && (now - lastGpsSentRef.current > 20000)) {
+          lastGpsSentRef.current = now;
+          try {
+            await axios.post(`${API_BASE}/tracking/${activeSessionRef.current.id}/location`, {
+              latitude: uLat,
+              longitude: uLng,
+            }, {
+              headers: { Authorization: `Session ${sessionToken}` }
+            });
+          } catch (e) {}
+        }
+      },
+      (err) => {
+        setIsStartingNav(false);
+        if (err.code === err.PERMISSION_DENIED) {
+          setNavState('denied');
+          toast.error('Location permission denied. Please allow location access in your browser.');
+        } else {
+          setNavState('unavailable');
+          toast.error('Unable to determine your current location.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 5000 }
+    );
+
+    gpsWatchIdRef.current = watchId;
+  }, [bank, confirmedAppt, trackingSession, socket, updateRoute, stopGPS, navState]);
 
   if (loading) return (
     <div className="flex items-center justify-center py-32">
@@ -131,17 +335,21 @@ const BloodBankDetail = () => {
   const fullAddress = [bank.address, bank.city, bank.district, bank.state, bank.pincode]
     .filter(Boolean).join(', ');
 
+  const googleMapsUrl = bank.latitude && bank.longitude
+    ? `https://www.google.com/maps/dir/?api=1&destination=${bank.latitude},${bank.longitude}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(bank.blood_bank_name + ', ' + fullAddress)}`;
+
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto space-y-6">
       {/* Back */}
       <button onClick={() => navigate(-1)}
-        className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 mb-5 transition-colors group">
+        className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 transition-colors group">
         <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
         Back to Blood Bank Directory
       </button>
 
-      {/* Header */}
-      <div className="card mb-5">
+      {/* Header Card */}
+      <div className="card">
         <div className="bg-gradient-to-r from-red-600 to-red-800 px-6 py-5 rounded-t-xl flex justify-between items-center">
           <div className="flex items-start gap-4">
             <div className="p-3 bg-white/10 rounded-xl flex-shrink-0">
@@ -185,18 +393,193 @@ const BloodBankDetail = () => {
         )}
       </div>
 
-      {/* Booking Form Overlay */}
+      {/* Booking Form & Navigation Card */}
       {showBooking && (
-        <div className="card p-6 mb-5 border-t-4 border-t-red-600 bg-red-50/30">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Request Donation Appointment</h2>
+        <div className="card p-6 border-t-4 border-t-red-600 bg-red-50/30 space-y-6">
+          <h2 className="text-lg font-bold text-slate-800">Request Donation Appointment</h2>
           
           {bookingStatus === 'success' ? (
-            <div className="bg-emerald-50 text-emerald-800 p-4 rounded-lg border border-emerald-200">
-              <h3 className="font-bold flex items-center gap-2 mb-1">
-                <AlertCircle className="w-5 h-5 text-emerald-600" />
-                Booking Request Confirmed
-              </h3>
-              <p className="text-sm">Your appointment has been securely logged. This is an operational booking request; slot availability is not guaranteed in real-time.</p>
+            <div className="bg-emerald-50 text-emerald-800 p-6 rounded-xl border border-emerald-200 space-y-5">
+              <div className="flex items-center gap-3 border-b border-emerald-200/60 pb-3">
+                <div className="p-2 bg-emerald-500 rounded-full text-white">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-emerald-900">✓ Appointment Confirmed</h3>
+                  <p className="text-xs text-emerald-700">Your appointment has been logged successfully.</p>
+                </div>
+              </div>
+
+              {/* Confirmed Details Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-[10px] font-black uppercase text-emerald-700">Selected Blood Bank</p>
+                  <p className="font-bold text-emerald-950">{bank.blood_bank_name}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-emerald-700">Appointment Date</p>
+                  <p className="font-bold text-emerald-950">
+                    {bookingForm.appointment_date ? new Date(bookingForm.appointment_date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-emerald-700">Address</p>
+                  <p className="font-medium text-emerald-900">{fullAddress}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-emerald-700">Patient Details</p>
+                  <p className="font-medium text-emerald-900">{bookingForm.patient_name} ({bookingForm.patient_blood_group})</p>
+                </div>
+              </div>
+
+              {/* ── PHASE 9 STEP 3B: LIVE NAVIGATION PANEL ── */}
+              <div className="p-5 bg-white rounded-xl border border-emerald-200 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Navigation className="w-5 h-5 text-blue-600 animate-pulse" />
+                    <h4 className="font-black text-slate-900 text-base">Live Navigation to Selected Blood Bank</h4>
+                  </div>
+                  {/* GPS Badge */}
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase ${
+                    navState === 'granted' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                    navState === 'requesting' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                    navState === 'arrived' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                    navState === 'denied' || navState === 'unavailable' ? 'bg-red-100 text-red-600 border border-red-200' :
+                    'bg-slate-100 text-slate-600'
+                  }`}>
+                    {navState === 'granted' && <Wifi className="w-3.5 h-3.5" />}
+                    {navState === 'requesting' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {navState === 'arrived' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                    {(navState === 'denied' || navState === 'unavailable') && <XCircle className="w-3.5 h-3.5" />}
+                    {navState === 'idle' && <WifiOff className="w-3.5 h-3.5" />}
+                    {navState === 'granted' ? 'GPS: Active' : navState === 'requesting' ? 'Requesting Location...' : navState === 'arrived' ? 'Arrived' : navState === 'denied' ? 'GPS Denied' : navState === 'unavailable' ? 'GPS Unavailable' : 'GPS Off'}
+                  </span>
+                </div>
+
+                {/* Consent & Start Navigation Trigger */}
+                {navState === 'idle' && (
+                  <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                    <p className="text-xs text-slate-600">
+                      <strong>Location Permission Consent:</strong> Your current location is required to provide live route navigation to the selected blood bank. Allow location access in your browser to continue.
+                    </p>
+                    <button
+                      id="start-navigation-btn"
+                      onClick={startNavigation}
+                      disabled={isStartingNav}
+                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-md shadow-blue-200 text-sm"
+                    >
+                      {isStartingNav ? <Loader2 className="animate-spin w-4 h-4" /> : <Play className="w-4 h-4" />}
+                      Start Navigation
+                    </button>
+                  </div>
+                )}
+
+                {/* Error Banner for Denied / Unavailable */}
+                {(navState === 'denied' || navState === 'unavailable') && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-2 text-sm text-red-700">
+                    <p className="font-semibold flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                      {navState === 'denied'
+                        ? 'Location permission denied. Please allow location access in your browser and try again.'
+                        : 'Unable to determine your current location. Please check your device/browser location settings.'}
+                    </p>
+                    <button
+                      onClick={startNavigation}
+                      className="px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Retry Location Access
+                    </button>
+                  </div>
+                )}
+
+                {/* Arrival State Banner */}
+                {navState === 'arrived' && (
+                  <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-xl flex items-center gap-3">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-600 flex-shrink-0" />
+                    <div>
+                      <p className="font-bold text-emerald-900 text-base">✓ You have arrived at the selected blood bank.</p>
+                      <p className="text-xs text-emerald-700">Your live GPS tracking has been stopped. Please present your booking details at the reception.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Navigation Details Bar (Active GPS) */}
+                {(navState === 'granted' || userCoords) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-blue-50/60 rounded-xl border border-blue-100 text-xs">
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-blue-600">Destination</p>
+                      <p className="font-bold text-slate-800 truncate">{bank.blood_bank_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-blue-600">Distance</p>
+                      <p className="font-bold text-slate-800">{routeData ? `${routeData.distanceKm} km` : 'Calculating...'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-blue-600">Estimated Travel Time</p>
+                      <p className="font-bold text-slate-800">{routeData?.durationMins ? `~${routeData.durationMins} mins` : '—'}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Live Navigation Map */}
+                {bank.latitude && bank.longitude && (userCoords || navState === 'granted') && (
+                  <div className="h-72 w-full rounded-xl overflow-hidden border border-slate-200 shadow-inner">
+                    <MapContainer
+                      center={userCoords ? [userCoords.lat, userCoords.lng] : [bank.latitude, bank.longitude]}
+                      zoom={13}
+                      scrollWheelZoom={false}
+                      className="h-full w-full"
+                      style={{ height: '100%', width: '100%' }}
+                    >
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      {/* Destination Marker */}
+                      <Marker position={[bank.latitude, bank.longitude]} icon={BloodBankIcon}>
+                        <Popup>
+                          <div className="text-xs font-bold">{bank.blood_bank_name}</div>
+                          <div className="text-[10px] text-slate-500">{fullAddress}</div>
+                        </Popup>
+                      </Marker>
+
+                      {/* User Location Marker */}
+                      {userCoords && (
+                        <Marker position={[userCoords.lat, userCoords.lng]} icon={userLocationIcon}>
+                          <Popup>
+                            <div className="text-xs font-bold">📍 Your Current GPS Location</div>
+                            <div className="text-[10px] text-slate-500">{userCoords.lat.toFixed(5)}, {userCoords.lng.toFixed(5)}</div>
+                          </Popup>
+                        </Marker>
+                      )}
+
+                      {/* Route Polyline */}
+                      {routeData?.coordinates && (
+                        <Polyline
+                          positions={routeData.coordinates}
+                          color="#2563eb"
+                          weight={5}
+                          opacity={0.85}
+                          dashArray="8 4"
+                        />
+                      )}
+                    </MapContainer>
+                  </div>
+                )}
+
+                {/* External Navigation Link */}
+                <div className="pt-2 border-t border-slate-100 flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">External Navigation Option:</span>
+                  <a
+                    href={googleMapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline font-bold flex items-center gap-1"
+                  >
+                    Open in Google Maps <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleBookSubmit} className="space-y-4">
@@ -230,7 +613,7 @@ const BloodBankDetail = () => {
       )}
 
       {/* Distinction Banner */}
-      <div className="grid sm:grid-cols-2 gap-3 mb-5">
+      <div className="grid sm:grid-cols-2 gap-3">
         <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
           <Info className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
           <p className="text-xs text-amber-800">
@@ -274,9 +657,9 @@ const BloodBankDetail = () => {
                   </Marker>
                 </MapContainer>
               </div>
-              <Link to={`/map?lat=${bank.latitude}&lng=${bank.longitude}&zoom=14`} className="text-xs text-primary-600 mt-2 block hover:underline">
-                View in Geographic Directory →
-              </Link>
+              <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 mt-2 inline-flex items-center gap-1 hover:underline font-medium">
+                Open in External Navigation →
+              </a>
             </div>
           )}
         </div>
@@ -293,7 +676,7 @@ const BloodBankDetail = () => {
                    isLink={!!bank.website} href={websiteHref} />
         </div>
 
-        {/* Blood Info — only shown if data exists */}
+        {/* Blood Info */}
         {(bank.blood_component || bank.blood_groups_ref || bank.service_time) && (
           <div className="card p-5 md:col-span-2">
             <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
@@ -301,7 +684,7 @@ const BloodBankDetail = () => {
             </h2>
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
               <p className="text-xs text-amber-800">
-                ⚠️ The component and blood group information below is <strong>static reference metadata</strong> from the 2015 government dataset. It does <strong>not</strong> reflect current availability.
+                ⚠️ The component and blood group information below is <strong>static reference metadata</strong> from the government dataset. It does <strong>not</strong> reflect current availability.
               </p>
             </div>
             <InfoRow icon={Droplets} label="Blood Components"      value={bank.blood_component} />
@@ -314,7 +697,7 @@ const BloodBankDetail = () => {
       {/* Data Source Footer */}
       <div className="mt-6 text-center">
         <p className="text-xs text-slate-400">
-          Source: National Health Portal Blood Bank Directory · Dataset ID #{bank.source_record_id} · Data as of Sep 2015
+          Source: National Health Portal Blood Bank Directory · Dataset ID #{bank.source_record_id}
         </p>
         <Link to="/blood-banks" className="mt-2 inline-flex items-center gap-1.5 text-xs text-red-600 hover:underline">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Blood Bank Directory

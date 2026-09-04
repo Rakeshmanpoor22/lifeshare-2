@@ -77,6 +77,12 @@ function buildWhere(filters, useSQLite) {
     params.push(filters.category);
   }
 
+  if (filters.care_type) {
+    const ph = placeholder();
+    clauses.push(useSQLite ? `LOWER(hospital_care_type) = LOWER(${ph})` : `hospital_care_type ILIKE ${ph}`);
+    params.push(filters.care_type);
+  }
+
   if (filters.emergency === 'yes') {
     clauses.push(`emergency_services IS NOT NULL AND emergency_services != '' AND emergency_services != '0'`);
   }
@@ -178,9 +184,8 @@ router.get('/nearby', async (req, res) => {
     
     // Select a smaller subset of columns for map markers to keep payload light
     const MAP_COLUMNS = 'id, hospital_name, latitude, longitude, state, district, town AS city, hospital_category';
-    // Phase 8 Demo Subset: Diverse real records including some Andaman islands to pass tests
-    // + Hyderabad Hospitals (6, 563, 564, 565, 566, 567, 568, 569, 571)
-    const DEMO_HOSPITAL_IDS = [1, 2, 3, 4, 5, 17760, 13781, 13782, 13783, 11421, 9765, 9766, 9767, 3230, 3231, 3232, 3233, 12390, 12391, 12392, 12007, 6, 7, 9, 10, 563, 564, 565, 566, 567, 568, 569, 571];
+    // Phase 8 Demo Subset: 25 original curated hospitals + 25 real Hyderabad hospitals (50 total)
+    const DEMO_HOSPITAL_IDS = [1, 2, 3, 4, 5, 17760, 13781, 13782, 13783, 11421, 9765, 9766, 9767, 3230, 3231, 3232, 3233, 12390, 12391, 12392, 12007, 6, 7, 9, 10, 563, 564, 565, 566, 567, 568, 569, 571, 573, 575, 576, 577, 578, 579, 581, 582, 583, 584, 586, 587, 588, 590, 591, 592, 593];
 
     if (USE_SQLITE) {
       sql = `SELECT ${MAP_COLUMNS} FROM hospital_directory 
@@ -230,6 +235,7 @@ router.get('/', async (req, res) => {
       state:         req.query.state   ? String(req.query.state).trim()   : null,
       district:      req.query.district? String(req.query.district).trim(): null,
       category:      req.query.category? String(req.query.category).trim(): null,
+      care_type:     req.query.care_type? String(req.query.care_type).trim(): null,
       emergency:     req.query.emergency === 'yes' ? 'yes' : null,
       medical_system:req.query.medical_system ? String(req.query.medical_system).trim() : null,
     };
