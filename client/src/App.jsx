@@ -14,6 +14,11 @@ import MatchDetails from './pages/MatchDetails';
 import EquipmentDetails from './pages/EquipmentDetails';
 import ActivityLog from './pages/ActivityLog';
 import BloodBank from './pages/BloodBank';
+import HospitalDirectory from './pages/HospitalDirectory';
+import HospitalDetail from './pages/HospitalDetail';
+import BloodBankDirectory from './pages/BloodBankDirectory';
+import BloodBankDetail from './pages/BloodBankDetail';
+import MapDirectory from './pages/MapDirectory';
 import { Toaster } from 'react-hot-toast';
 
 const ProtectedRoute = ({ children }) => {
@@ -70,6 +75,14 @@ function App() {
                     <BloodBank />
                   </ProtectedRoute>
                 } />
+                {/* Public hospital directory routes — no auth required */}
+                <Route path="/hospitals" element={<HospitalDirectory />} />
+                <Route path="/hospitals/:id" element={<HospitalDetail />} />
+                {/* Public blood bank directory routes — no auth required */}
+                <Route path="/blood-banks" element={<BloodBankDirectory />} />
+                <Route path="/blood-banks/:id" element={<BloodBankDetail />} />
+                {/* Public map route */}
+                <Route path="/map" element={<MapDirectory />} />
                 <Route path="/policy" element={<PolicyGuide />} />
               </Routes>
             </main>

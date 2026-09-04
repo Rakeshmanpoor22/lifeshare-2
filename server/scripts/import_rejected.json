@@ -1,0 +1,10 @@
+{
+  "importedAt": "2026-09-04T06:30:57.568Z",
+  "csvPath": "C:\\Users\\rakes\\proj\\LIFE_SHARE\\data\\hospital_directory.csv",
+  "totalCsvRows": 30273,
+  "validRecords": 30273,
+  "imported": 0,
+  "skipped": 30273,
+  "rejected": 0,
+  "rejectedRows": []
+}

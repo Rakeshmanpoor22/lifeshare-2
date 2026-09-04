@@ -1,0 +1,10 @@
+{
+  "importedAt": "2026-09-04T05:45:27.043Z",
+  "xlsPath": "C:\\Users\\rakes\\proj\\LIFE_SHARE\\data\\Blood_bank_updated-sep_2015.xls",
+  "totalXlsRows": 2947,
+  "validRecords": 2947,
+  "imported": 0,
+  "skipped": 2947,
+  "rejected": 0,
+  "rejectedRows": []
+}

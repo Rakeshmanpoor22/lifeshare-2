@@ -3,11 +3,18 @@ const bcrypt = require('bcryptjs');
 
 const seed = async () => {
   try {
+    if (!USE_SQLITE && process.env.ALLOW_PG_SEED !== 'true') {
+      console.error('❌ SEED ABORTED: Running seed on PostgreSQL will wipe live data. To force, set ALLOW_PG_SEED=true.');
+      process.exit(1);
+    }
     console.log('Seeding LifeShare Demo Data...');
 
-    // 1. Clear Tables (SQLite doesn't support TRUNCATE CASCADE)
+    // Clear Tables (SQLite doesn't support TRUNCATE CASCADE)
+    // NOTE: hospital_directory and blood_bank_directory are intentionally EXCLUDED —
+    // they hold static government reference datasets and must NOT be wiped by seed.
     if (USE_SQLITE) {
-      const tables = ['notifications', 'transactions', 'audit_logs', 'requests', 'organs', 'equipment', 'blood', 'hospitals'];
+      // First, clear all tables except hospital_directory, blood_bank_directory, equipment_catalog, organ_catalog (static reference data)
+      const tables = ['transactions', 'requests', 'blood', 'equipment', 'organs', 'audit_logs', 'notifications', 'hospitals'];
       for (const t of tables) await query(`DELETE FROM ${t}`);
       await query(`DELETE FROM sqlite_sequence WHERE name IN (${tables.map(t => `'${t}'`).join(',')})`).catch(() => {});
     } else {

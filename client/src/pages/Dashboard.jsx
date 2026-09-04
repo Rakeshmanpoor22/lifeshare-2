@@ -4,7 +4,7 @@ import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { 
   Heart, Activity, Package, Clock, AlertTriangle, CheckCircle2, 
-  Search, ArrowRight, PlusCircle, MapPin, Droplets, Info
+  Search, ArrowRight, PlusCircle, MapPin, Droplets, Info, Building2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -242,6 +242,56 @@ const Dashboard = () => {
                   </motion.div>
                 ))}
               </AnimatePresence>
+            </div>
+          </section>
+
+          {/* Healthcare Directory Section (Moved from Navbar) */}
+          <section className="space-y-4 mt-8 pt-6 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <Search className="w-5 h-5 text-indigo-500" />
+                Healthcare Directory
+              </h2>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Hospital Directory Card */}
+              <div className="card p-6 border-l-4 border-l-indigo-500 flex flex-col justify-between gap-6 hover:shadow-md transition-shadow bg-gradient-to-r from-indigo-50/50 to-white">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <h3 className="font-bold text-slate-900 text-lg">Hospital Directory</h3>
+                  </div>
+                  <p className="text-slate-600">30,273 registered hospitals across India.</p>
+                </div>
+                <Link 
+                  to="/hospitals" 
+                  className="btn-secondary whitespace-nowrap !border-indigo-200 !text-indigo-600 hover:!bg-indigo-50 hover:!border-indigo-300 px-6 py-2 w-full text-center"
+                >
+                  Explore Hospitals
+                </Link>
+              </div>
+
+              {/* Blood Bank Directory Card */}
+              <div className="card p-6 border-l-4 border-l-red-500 flex flex-col justify-between gap-6 hover:shadow-md transition-shadow bg-gradient-to-r from-red-50/50 to-white">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-red-100 text-red-600 rounded-lg">
+                      <Droplets className="w-5 h-5" />
+                    </div>
+                    <h3 className="font-bold text-slate-900 text-lg">Blood Banks</h3>
+                  </div>
+                  <p className="text-slate-600">2,947 verified national blood banks.</p>
+                </div>
+                <Link 
+                  to="/blood-banks" 
+                  className="btn-secondary whitespace-nowrap !border-red-200 !text-red-600 hover:!bg-red-50 hover:!border-red-300 px-6 py-2 w-full text-center"
+                >
+                  Explore Blood Banks
+                </Link>
+              </div>
             </div>
           </section>
         </div>

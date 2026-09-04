@@ -116,6 +116,21 @@ router.post('/:id/accept', auth, async (req, res) => {
 
     const request = requestResult.rows[0];
 
+    // Check IDOR: ensure the donorId actually owns the requested resource
+    let resourceTable = 'organs';
+    if (request.resource_type === 'equipment') resourceTable = 'equipment';
+    if (request.resource_type === 'blood') resourceTable = 'blood';
+
+    const ownershipCheck = await query(
+      `SELECT id FROM ${resourceTable} WHERE id = $1 AND hospital_id = $2`,
+      [request.target_resource_id, donorId]
+    );
+
+    if (ownershipCheck.rows.length === 0) {
+      await query('ROLLBACK');
+      return res.status(403).json({ error: 'Unauthorized: You do not own the requested resource.' });
+    }
+
     // 2. Log Transaction
     await query(
       `INSERT INTO transactions (request_id, donor_hospital_id, recipient_hospital_id, resource_type, resource_id)
@@ -127,10 +142,6 @@ router.post('/:id/accept', auth, async (req, res) => {
     await query('UPDATE requests SET status = \'matched\' WHERE id = $1', [requestId]);
 
     // 4. Update resource status
-    let resourceTable = 'organs';
-    if (request.resource_type === 'equipment') resourceTable = 'equipment';
-    if (request.resource_type === 'blood') resourceTable = 'blood';
-    
     await query(`UPDATE ${resourceTable} SET status = 'reserved' WHERE id = $1`, [request.target_resource_id]);
 
     await query('COMMIT');

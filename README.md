@@ -108,7 +108,7 @@ A centralized network generates valuable data on organ demand, equipment shortag
 
 > _Screenshots and a demo GIF coming soon._
 
-| Dashboard | Resource Request | Live Tracking |
+| Dashboard | Resource Request | Geographic Map |
 |---|---|---|
 | _placeholder_ | _placeholder_ | _placeholder_ |
 
@@ -118,7 +118,7 @@ A centralized network generates valuable data on organ demand, equipment shortag
 
 **Frontend**
 
-![React](https://img.shields.io/badge/React%2019-20232A?style=for-the-badge&logo=react&logoColor=61DAFB) ![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white) ![TailwindCSS](https://img.shields.io/badge/Tailwind%20CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white) ![Framer Motion](https://img.shields.io/badge/Framer%20Motion-0055FF?style=for-the-badge&logo=framer&logoColor=white)
+![React](https://img.shields.io/badge/React%2019-20232A?style=for-the-badge&logo=react&logoColor=61DAFB) ![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white) ![TailwindCSS](https://img.shields.io/badge/Tailwind%20CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white) ![Leaflet](https://img.shields.io/badge/Leaflet-199900?style=for-the-badge&logo=leaflet&logoColor=white)
 
 **Backend**
 
@@ -137,47 +137,161 @@ A centralized network generates valuable data on organ demand, equipment shortag
 
 ### 1. Clone & Install
 ```bash
-# Server
-cd server
-npm install
-
-# Client
-cd ../client
-npm install
+cd server && npm install
+cd ../client && npm install
 ```
 
 ### 2. Configure Environment
-Create `.env` files in both `server/` and `client/`. In `server/.env`, set `JWT_SECRET` and `PORT` (see `server/.env.example`).
+Copy `.env.example` to `server/.env`. Set `JWT_SECRET` and `PORT`.
 
-### 3. Seed the Database
+### 3. Initialize the Database
 ```bash
 cd server
-npm run seed
+node initialize_sqlite.js
 ```
-> Seeded login: `city@central.com` / `password123`
 
-### 4. Run the App
+### 4. Import the Hospital Directory (30,273 hospitals)
+```bash
+# Place CSV at: data/hospital_directory.csv (project root)
+cd server
+npm run import:hospitals
+```
+> Idempotent — safe to re-run. Existing records are skipped.
+
+### 5. Import the Blood Bank Directory (2,947 blood banks)
+```bash
+# Place XLS at: data/Blood_bank_updated-sep_2015.xls (project root)
+cd server
+npm run import:bloodbanks
+```
+
+### 6. Seed Demo Data
+```bash
+cd server && npm run seed
+```
+> Demo login: `city@central.com` / `password123`
+
+### 7. Run the App
 
 **Terminal 1 — Backend**
 ```bash
-cd server
-npm run dev   # http://localhost:5000
+cd server && npm run dev   # http://localhost:5000
 ```
 
 **Terminal 2 — Frontend**
 ```bash
-cd client
-npm run dev   # http://localhost:5173
+cd client && npm run dev   # http://localhost:5173
 ```
 
-Open `http://localhost:5173` and log in with the seeded account to explore.
+The Hospital and Blood Bank Directories at `/hospitals` and `/blood-banks`, as well as the map at `/map`, are publicly accessible without login.
+
+---
+
+## 🏥 Hospital Directory Dataset
+
+### Dataset Information
+| Property | Value |
+|---|---|
+| File | `data/hospital_directory.csv` |
+| Total records | 30,273 hospitals |
+| States / UTs | 36 |
+| CSV columns | 48 fields |
+| Records with coordinates | ~10,951 (36.2%) |
+
+> ⚠️ **Static Reference Data**: This directory contains government hospital contact information only. It does NOT represent real-time bed availability, blood stock, organ availability, or emergency capacity. Real-time resource data is managed by verified LifeShare hospital accounts.
+
+---
+
+## 🩸 Blood Bank Directory Dataset
+
+### Dataset Information
+| Property | Value |
+|---|---|
+| File | `data/Blood_bank_updated-sep_2015.xls` |
+| Total records | 2,947 blood banks |
+| Records with coordinates | 898 (30.5%) |
+
+> ⚠️ **Static Reference Data**: This directory contains government blood bank contact information only. It does NOT represent real-time blood availability. Real-time resource data is managed by verified LifeShare hospital accounts.
+
+---
+
+## 🌐 API Endpoints
+
+### Hospital Directory (Public — no authentication required)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/hospitals` | Paginated hospital list |
+| `GET` | `/api/hospitals/:id` | Single hospital detail |
+| `GET` | `/api/hospitals/states` | All distinct states |
+| `GET` | `/api/hospitals/districts?state=X` | Districts by state |
+| `GET` | `/api/hospitals/nearby` | Map bounding box query |
+
+### Blood Bank Directory (Public — no authentication required)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/blood-banks` | Paginated blood bank list |
+| `GET` | `/api/blood-banks/:id` | Single blood bank detail |
+| `GET` | `/api/blood-banks/states` | All distinct states |
+| `GET` | `/api/blood-banks/districts?state=X` | Districts by state |
+| `GET` | `/api/blood-banks/nearby` | Map bounding box query |
+
+**Query parameters for `GET /api/hospitals` and `GET /api/blood-banks`:**
+
+| Param | Description |
+|---|---|
+| `page` | Page number (default: 1) |
+| `limit` | Results per page (default: 20, max: 100) |
+| `q` | Search by name, district, state, or pincode |
+| `state` | Filter by state |
+| `district` | Filter by district |
+| `category` | `Private` or `Public/Government` |
+
+### Resource APIs (Authenticated)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/signup` | Hospital registration |
+| `POST` | `/api/auth/login` | Login — returns JWT |
+| `GET` | `/api/resources/organs` | Available organs |
+| `GET` | `/api/resources/equipment` | Available equipment |
+| `GET` | `/api/resources/blood` | Blood inventory |
+| `POST` | `/api/requests` | Create resource request |
+| `GET` | `/api/notifications` | Notifications |
+
+---
+
+## 🗄️ Database Architecture
+
+```
+hospital_directory          ← Static government reference data
+blood_bank_directory          (intentionally separate from auth table)
+  ↓
+hospitals                   ← Verified authenticated hospital accounts
+  ↓
+organs / blood / equipment  ← Live resource inventory
+  ↓
+requests / transactions     ← Resource demand and transfers
+  ↓
+notifications / audit_logs  ← Alerts and immutable activity trail
+```
+
+**Schema changes in this release:**
+- `blood_bank_directory` table added
+- No changes to existing live resource tables
 
 ---
 
 ## 🔭 Future Scope
 
-- [ ] Connect hospitals across the entire country
-- [ ] AI-based recommendations for best hospital match & transport routes
+- [x] OpenStreetMap / Leaflet map for hospitals with coordinates
+- [x] Blood-bank directory integration
+- [x] Standardized Medical Equipment Catalog integration
+- [x] Standardized Organ Type integration (Phase 5)
+- [ ] "Claim this hospital/blood bank" — link auth accounts to directory entries
+- [ ] OpenStreetMap routing (OSRM) for ETA and actual road distance
+- [ ] AI-based recommendations for best hospital match and transport routes
 - [ ] Blockchain + biometric authentication for stronger security
 - [ ] International organ-sharing collaboration
 - [ ] Dedicated disaster and pandemic response mode
@@ -187,7 +301,7 @@ Open `http://localhost:5173` and log in with the seeded account to explore.
 
 ## 🤝 Contributing
 
-Contributions are welcome! Fork the repo, create a feature branch, and open a pull request. Improvements toward faster, safer emergency response paths are especially appreciated.
+Contributions are welcome! Fork the repo, create a feature branch, and open a pull request.
 
 ```bash
 git checkout -b feature/your-feature-name

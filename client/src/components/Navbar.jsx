@@ -54,6 +54,7 @@ const Navbar = () => {
                 <Link to="/dashboard" className="text-slate-600 hover:text-primary-600 font-medium transition-colors">Dashboard</Link>
                 <Link to="/activity" className="text-slate-600 hover:text-primary-600 font-medium transition-colors">Activity History</Link>
                 <Link to="/blood-bank" className="text-slate-600 hover:text-primary-600 font-bold transition-colors">Blood Bank</Link>
+                <Link to="/map" className="text-slate-600 hover:text-indigo-600 font-medium transition-colors">Map</Link>
                 <Link to="/post-resource" className="text-slate-600 hover:text-emerald-600 font-medium transition-colors">List Resource</Link>
                 <Link to="/request" className="text-emerald-600 hover:text-emerald-700 font-bold transition-colors">Request</Link>
                 <div className="relative group">
@@ -111,7 +112,8 @@ const Navbar = () => {
             <>
               <Link to="/dashboard" onClick={() => setIsOpen(false)} className="block py-2 text-slate-600 font-medium">Dashboard</Link>
               <Link to="/activity" onClick={() => setIsOpen(false)} className="block py-2 text-slate-600 font-medium">Activity</Link>
-              <Link to="/blood-bank" onClick={() => setIsOpen(false)} className="block py-2 text-slate-600 font-bold">Blood Bank</Link>
+              <Link to="/blood-bank" onClick={() => setIsOpen(false)} className="block py-2 text-slate-600 font-bold">Blood Bank (Live)</Link>
+              <Link to="/map" onClick={() => setIsOpen(false)} className="block py-2 text-indigo-600 font-medium">Map</Link>
               <Link to="/post-resource" onClick={() => setIsOpen(false)} className="block py-2 text-slate-600 font-medium">List Resource</Link>
               <Link to="/request" onClick={() => setIsOpen(false)} className="block py-2 text-emerald-600 font-bold">Request</Link>
               <button onClick={handleLogout} className="flex items-center gap-2 py-2 text-red-600 font-medium">

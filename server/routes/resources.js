@@ -22,16 +22,63 @@ router.get('/organs', async (req, res) => {
   }
 });
 
-// Get all available equipment
-router.get('/equipment', async (req, res) => {
+// Get organ catalog (Reference Data)
+router.get('/organs/catalog', async (req, res) => {
   try {
     const result = await query(`
+      SELECT * FROM organ_catalog 
+      ORDER BY category ASC, type ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Fetch Organ Catalog Error:', err);
+    res.status(500).json({ error: 'Failed to fetch organ catalog.' });
+  }
+});
+
+// Get equipment catalog (Reference Data)
+router.get('/equipment/catalog', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT * FROM equipment_catalog 
+      ORDER BY category ASC, type ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Fetch Equipment Catalog Error:', err);
+    res.status(500).json({ error: 'Failed to fetch equipment catalog.' });
+  }
+});
+
+// Get all equipment (with optional filters)
+router.get('/equipment', async (req, res) => {
+  try {
+    const { type, status } = req.query;
+    let sql = `
       SELECT e.*, h.name as hospital_name, h.city, h.state
       FROM equipment e
       JOIN hospitals h ON e.hospital_id = h.id
-      WHERE e.status = 'available'
-      ORDER BY e.created_at DESC
-    `);
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      sql += ` AND e.status = $${paramIndex++}`;
+      params.push(status);
+    } else if (status !== 'all') {
+      // Default behavior preserves existing dashboard logic
+      sql += ` AND e.status = 'available'`;
+    }
+
+    if (type) {
+      sql += ` AND e.type = $${paramIndex++}`;
+      params.push(type);
+    }
+
+    sql += ` ORDER BY e.created_at DESC`;
+
+    const result = await query(sql, params);
     res.json(result.rows);
   } catch (err) {
     console.error('Fetch Equipment Error:', err);
@@ -45,6 +92,12 @@ router.post('/organs', auth, async (req, res) => {
   const hospitalId = req.hospital.id;
 
   try {
+    // 1. Validate against organ_catalog
+    const catalogCheck = await query('SELECT id FROM organ_catalog WHERE type = $1', [type]);
+    if (catalogCheck.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid organ type. Must be a standardized catalog value.' });
+    }
+
     const result = await query(
       'INSERT INTO organs (hospital_id, type, blood_group) VALUES ($1, $2, $3) RETURNING *',
       [hospitalId, type, blood_group]
@@ -63,8 +116,11 @@ router.post('/organs', auth, async (req, res) => {
       const connectedHospitals = req.app.get('connectedHospitals');
 
       for (const wlReq of waitlistReqs.rows) {
-        // If the waitlist requested item matches the new organ type (basic check inside notes)
-        if (wlReq.notes && wlReq.notes.toLowerCase().includes(type.toLowerCase())) {
+        // Improved waitlist matching: Exact match against standardized type (or substring in notes for legacy compat)
+        const typeMatch = type.toLowerCase();
+        const requestNotes = (wlReq.notes || '').toLowerCase();
+        
+        if (requestNotes.includes(typeMatch)) {
           const message = `WAITLIST ALERT: A new ${type} (${blood_group}) has been added to the network!`;
           
           await query('INSERT INTO notifications (hospital_id, message, type) VALUES ($1, $2, $3)', [wlReq.hospital_id, message, 'alert']);
@@ -88,18 +144,19 @@ router.post('/organs', auth, async (req, res) => {
 
 // Add equipment (Hospital Only)
 router.post('/equipment', auth, async (req, res) => {
-  const { type, model } = req.body;
+  const { type, model, condition = 'good' } = req.body;
   const hospitalId = req.hospital.id;
 
   try {
     const result = await query(
-      'INSERT INTO equipment (hospital_id, type, model) VALUES ($1, $2, $3) RETURNING *',
-      [hospitalId, type, model]
+      'INSERT INTO equipment (hospital_id, type, model, condition) VALUES ($1, $2, $3, $4) RETURNING *',
+      [hospitalId, type, model, condition]
     );
 
-    await logAudit('Add Equipment', hospitalId, { type, model });
+    await logAudit('Add Equipment', hospitalId, { type, model, condition });
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    console.error('Add Equipment Error:', err);
     res.status(500).json({ error: 'Failed to add equipment.' });
   }
 });
@@ -142,6 +199,10 @@ router.get('/blood', async (req, res) => {
 router.post('/blood', auth, async (req, res) => {
   const { blood_group, units } = req.body;
   const hospitalId = req.hospital.id;
+  
+  if (!Number.isInteger(Number(units)) || Number(units) <= 0) {
+    return res.status(400).json({ error: 'Units must be a positive integer.' });
+  }
 
   try {
     const result = await query(

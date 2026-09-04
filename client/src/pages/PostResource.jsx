@@ -12,12 +12,31 @@ const PostResource = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [resourceType, setResourceType] = useState('organ');
+  const [equipmentCatalog, setEquipmentCatalog] = useState([]);
+  const [organCatalog, setOrganCatalog] = useState([]);
   const [formData, setFormData] = useState({
     type: '',
     blood_group: 'A+',
     model: '',
-    units: 1
+    units: 1,
+    condition: 'good'
   });
+
+  React.useEffect(() => {
+    const fetchCatalogs = async () => {
+      try {
+        const [eqRes, orgRes] = await Promise.all([
+          api.get('/resources/equipment/catalog'),
+          api.get('/resources/organs/catalog')
+        ]);
+        setEquipmentCatalog(eqRes.data);
+        setOrganCatalog(orgRes.data);
+      } catch (err) {
+        toast.error('Failed to load catalogs');
+      }
+    };
+    fetchCatalogs();
+  }, []);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -121,14 +140,50 @@ const PostResource = () => {
                 </label>
                 <div className="relative">
                   <Activity className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input 
-                    required={resourceType !== 'blood'} 
-                    name="type" 
-                    value={formData.type}
-                    onChange={handleChange} 
-                    className="input-field pl-10" 
-                    placeholder={resourceType === 'blood' ? 'Optional description' : 'e.g., Kidney, Ventilator'} 
-                  />
+                  {resourceType === 'equipment' ? (
+                    <select 
+                      required 
+                      name="type" 
+                      value={formData.type}
+                      onChange={handleChange} 
+                      className="input-field pl-10 bg-white"
+                    >
+                      <option value="" disabled>Select Equipment Type</option>
+                      {Array.from(new Set(equipmentCatalog.map(c => c.category))).map(cat => (
+                        <optgroup key={cat} label={cat}>
+                          {equipmentCatalog.filter(c => c.category === cat).map(c => (
+                            <option key={c.type} value={c.type}>{c.type}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  ) : resourceType === 'organ' ? (
+                    <select 
+                      required 
+                      name="type" 
+                      value={formData.type}
+                      onChange={handleChange} 
+                      className="input-field pl-10 bg-white"
+                    >
+                      <option value="" disabled>Select Organ Type</option>
+                      {Array.from(new Set(organCatalog.map(c => c.category))).map(cat => (
+                        <optgroup key={cat} label={cat}>
+                          {organCatalog.filter(c => c.category === cat).map(c => (
+                            <option key={c.type} value={c.type}>{c.type}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  ) : (
+                    <input 
+                      required={resourceType !== 'blood'} 
+                      name="type" 
+                      value={formData.type}
+                      onChange={handleChange} 
+                      className="input-field pl-10" 
+                      placeholder={resourceType === 'blood' ? 'Optional description' : 'e.g., Kidney'} 
+                    />
+                  )}
                 </div>
               </div>
 
@@ -147,16 +202,31 @@ const PostResource = () => {
                   </select>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700">Model/Serial No.</label>
-                  <input 
-                    name="model" 
-                    value={formData.model}
-                    onChange={handleChange} 
-                    className="input-field" 
-                    placeholder="e.g., V-2000, Philips G3" 
-                  />
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Model/Serial No.</label>
+                    <input 
+                      name="model" 
+                      value={formData.model}
+                      onChange={handleChange} 
+                      className="input-field" 
+                      placeholder="e.g., V-2000, Philips G3" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Condition</label>
+                    <select 
+                      name="condition" 
+                      value={formData.condition}
+                      onChange={handleChange} 
+                      className="input-field bg-white"
+                    >
+                      <option value="excellent">Excellent</option>
+                      <option value="good">Good</option>
+                      <option value="fair">Fair</option>
+                    </select>
+                  </div>
+                </>
               )}
 
               {resourceType === 'blood' && (

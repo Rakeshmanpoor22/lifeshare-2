@@ -1,9 +1,14 @@
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database('./lifeshare.db');
+const { Pool } = require('pg');
+require('dotenv').config();
+
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
 const schema = `
 CREATE TABLE IF NOT EXISTS hospitals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     registration_id TEXT UNIQUE NOT NULL,
     address TEXT NOT NULL,
@@ -16,93 +21,93 @@ CREATE TABLE IF NOT EXISTS hospitals (
     owner_name TEXT NOT NULL,
     license_number TEXT UNIQUE,
     password_hash TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS organs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     hospital_id INTEGER REFERENCES hospitals(id) ON DELETE CASCADE,
     type TEXT NOT NULL,
     blood_group TEXT NOT NULL,
     status TEXT DEFAULT 'available',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS equipment (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     hospital_id INTEGER REFERENCES hospitals(id) ON DELETE CASCADE,
     type TEXT NOT NULL,
     model TEXT,
     status TEXT DEFAULT 'available',
     condition TEXT DEFAULT 'good',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS blood (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     hospital_id INTEGER REFERENCES hospitals(id) ON DELETE CASCADE,
     blood_group TEXT NOT NULL,
     units INTEGER NOT NULL,
     status TEXT DEFAULT 'available',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     hospital_id INTEGER REFERENCES hospitals(id) ON DELETE CASCADE,
     resource_type TEXT NOT NULL,
     target_resource_id INTEGER,
     urgency TEXT DEFAULT 'medium',
     status TEXT DEFAULT 'pending',
     notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS equipment_catalog (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     category TEXT NOT NULL,
     type TEXT NOT NULL UNIQUE,
     description TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS organ_catalog (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     type TEXT NOT NULL UNIQUE,
     category TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     request_id INTEGER REFERENCES requests(id),
     donor_hospital_id INTEGER REFERENCES hospitals(id),
     recipient_hospital_id INTEGER REFERENCES hospitals(id),
     resource_type TEXT NOT NULL,
     resource_id INTEGER NOT NULL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     hospital_id INTEGER REFERENCES hospitals(id) ON DELETE CASCADE,
     message TEXT NOT NULL,
     type TEXT,
     read_status BOOLEAN DEFAULT FALSE,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     action TEXT NOT NULL,
     hospital_id INTEGER REFERENCES hospitals(id),
     details TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Government hospital reference dataset (static, separate from auth hospitals table)
 CREATE TABLE IF NOT EXISTS hospital_directory (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                    SERIAL PRIMARY KEY,
     source_record_id      INTEGER  UNIQUE,
     hospital_name         TEXT     NOT NULL,
     hospital_category     TEXT,
@@ -128,15 +133,15 @@ CREATE TABLE IF NOT EXISTS hospital_directory (
     website               TEXT,
     specialties           TEXT,
     facilities            TEXT,
-    total_beds            INTEGER,
+    total_beds            BIGINT,
     emergency_services    TEXT,
     accreditation         TEXT,
     hospital_reg_number   TEXT,
-    established_year      INTEGER,
-    number_doctors        INTEGER,
+    established_year      BIGINT,
+    number_doctors        BIGINT,
     source                TEXT DEFAULT 'government_dataset',
-    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_hd_state      ON hospital_directory(state);
 CREATE INDEX IF NOT EXISTS idx_hd_district   ON hospital_directory(district);
@@ -147,7 +152,7 @@ CREATE INDEX IF NOT EXISTS idx_hd_state_dist ON hospital_directory(state, distri
 
 -- Government blood bank reference dataset (static, separate from live blood table)
 CREATE TABLE IF NOT EXISTS blood_bank_directory (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                    SERIAL PRIMARY KEY,
     source_record_id      INTEGER  UNIQUE,
     blood_bank_name       TEXT     NOT NULL,
     address               TEXT,
@@ -166,8 +171,8 @@ CREATE TABLE IF NOT EXISTS blood_bank_directory (
     longitude             REAL,
     hospital_directory_id INTEGER REFERENCES hospital_directory(id),
     source                TEXT DEFAULT 'government_blood_bank_directory',
-    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_bbd_state      ON blood_bank_directory(state);
 CREATE INDEX IF NOT EXISTS idx_bbd_district   ON blood_bank_directory(district);
@@ -177,13 +182,16 @@ CREATE INDEX IF NOT EXISTS idx_bbd_name       ON blood_bank_directory(blood_bank
 CREATE INDEX IF NOT EXISTS idx_bbd_state_dist ON blood_bank_directory(state, district);
 `;
 
-db.serialize(() => {
-  db.exec(schema, (err) => {
-    if (err) {
-      console.error('SQLite Schema Error:', err.message);
-    } else {
-      console.log('SQLite Database Initialized at ./lifeshare.db');
-    }
-    db.close();
-  });
-});
+async function run() {
+  console.log('Connecting to PostgreSQL using DATABASE_URL...');
+  try {
+    await db.query(schema);
+    console.log('PostgreSQL Database Initialized Successfully!');
+  } catch (err) {
+    console.error('PostgreSQL Schema Error:', err);
+  } finally {
+    db.end();
+  }
+}
+
+run();
