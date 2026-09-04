@@ -13,7 +13,7 @@ const bloodBankRoutes = require('./routes/bloodBanks');
 const appointmentRoutes = require('./routes/appointments');
 const trackingRoutes = require('./routes/tracking');
 const { authLimiter, publicDirectoryLimiter, generalApiLimiter } = require('./middleware/rateLimiter');
-const { pool, USE_SQLITE } = require('./db');
+const { query, pool, USE_SQLITE } = require('./db');
 
 dotenv.config();
 
