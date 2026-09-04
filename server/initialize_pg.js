@@ -1,9 +1,12 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+const dbUrl = process.env.DATABASE_URL || process.env.DB_URL;
+const isLocalDb = (dbUrl || '').includes('localhost') || (dbUrl || '').includes('127.0.0.1');
+
 const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionString: dbUrl,
+  ssl: isLocalDb ? false : { rejectUnauthorized: false },
 });
 
 const schema = `

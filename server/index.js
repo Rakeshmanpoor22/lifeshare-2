@@ -140,7 +140,7 @@ server.listen(PORT, async () => {
       console.log('PostgreSQL connected successfully.');
     } catch (err) {
       console.error('Failed to connect to PostgreSQL:', err.message);
-      console.warn('NOTE: Ensure PostgreSQL is running and DB_URL is correct in .env');
+      console.warn('NOTE: Ensure PostgreSQL is running and DATABASE_URL or DB_URL is correct in environment variables');
     }
   } else {
     console.log('SQLite is active. Database file: ./lifeshare.db');

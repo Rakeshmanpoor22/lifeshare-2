@@ -9,9 +9,17 @@ if (USE_SQLITE) {
   console.log('Using SQLite for local development...');
   db = new sqlite3.Database(process.env.SQLITE_PATH || './lifeshare.db');
 } else {
-  const isLocalDb = (process.env.DATABASE_URL || '').includes('localhost') || (process.env.DATABASE_URL || '').includes('127.0.0.1');
+  const dbUrl = process.env.DATABASE_URL || process.env.DB_URL;
+  if (dbUrl) {
+    const activeVar = process.env.DATABASE_URL ? 'DATABASE_URL' : 'DB_URL';
+    console.log(`[DB Config] PostgreSQL connection configured using environment variable: ${activeVar}`);
+  } else {
+    console.error('[DB Config Error] USE_SQLITE is false, but neither DATABASE_URL nor DB_URL is defined in environment variables!');
+  }
+
+  const isLocalDb = (dbUrl || '').includes('localhost') || (dbUrl || '').includes('127.0.0.1');
   db = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/lifeshare',
+    connectionString: dbUrl || 'postgresql://postgres:postgres@localhost:5432/lifeshare',
     ssl: isLocalDb ? false : { rejectUnauthorized: false },
     max: 20,
     idleTimeoutMillis: 30000,
