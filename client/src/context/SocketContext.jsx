@@ -23,8 +23,11 @@ export const SocketProvider = ({ children }) => {
                 newSocket.emit('join', user.id);
             });
 
-            newSocket.on('new_notification', (data) => {
+            const handleNotification = (data) => {
+                if (!data || !data.message) return;
+                const toastId = data.id || `${data.type || 'notif'}_${data.message}`;
                 toast(data.message, {
+                    id: toastId,
                     icon: data.type === 'match' ? '🚨' : '🔔',
                     duration: 5000,
                     style: {
@@ -33,15 +36,16 @@ export const SocketProvider = ({ children }) => {
                     },
                 });
                 
-                // You could also trigger a data refresh here
-                // We'll expose the notification event for components to listen to
                 const event = new CustomEvent('socket_notification', { detail: data });
                 window.dispatchEvent(event);
-            });
+            };
+
+            newSocket.on('new_notification', handleNotification);
 
             setSocket(newSocket);
 
             return () => {
+                newSocket.off('new_notification', handleNotification);
                 newSocket.disconnect();
             };
         } else {

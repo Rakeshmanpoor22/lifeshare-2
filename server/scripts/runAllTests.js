@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const scriptsDir = __dirname;
 const testFiles = fs.readdirSync(scriptsDir).filter(f => f.startsWith('test') && f.endsWith('.js'));

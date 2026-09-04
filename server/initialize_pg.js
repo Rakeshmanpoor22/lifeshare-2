@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS hospitals (
     owner_name TEXT NOT NULL,
     license_number TEXT UNIQUE,
     password_hash TEXT NOT NULL,
+    hospital_directory_id INTEGER REFERENCES hospital_directory(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

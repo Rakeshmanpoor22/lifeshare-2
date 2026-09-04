@@ -184,15 +184,20 @@ router.get('/nearby', async (req, res) => {
     
     // Select a smaller subset of columns for map markers to keep payload light
     const MAP_COLUMNS = 'id, hospital_name, latitude, longitude, state, district, town AS city, hospital_category';
-    // Phase 8 Demo Subset: 25 original curated hospitals + 25 real Hyderabad hospitals (50 total)
+    // Three Controlled Hospitals: 564 (Apollo Jubilee Hills), 568 (Yashoda Somajiguda), 567 (Kamineni LB Nagar)
+    const THREE_HOSPITAL_NETWORK_IDS = [564, 568, 567];
+    // Legacy Demo Subset: 25 original curated hospitals + 25 real Hyderabad hospitals (50 total)
     const DEMO_HOSPITAL_IDS = [1, 2, 3, 4, 5, 17760, 13781, 13782, 13783, 11421, 9765, 9766, 9767, 3230, 3231, 3232, 3233, 12390, 12391, 12392, 12007, 6, 7, 9, 10, 563, 564, 565, 566, 567, 568, 569, 571, 573, 575, 576, 577, 578, 579, 581, 582, 583, 584, 586, 587, 588, 590, 591, 592, 593];
+
+    const isControlled = req.query.controlled_network === 'three_hospital_groups' || req.query.controlled_network === 'true';
+    const activeIds = isControlled ? THREE_HOSPITAL_NETWORK_IDS : DEMO_HOSPITAL_IDS;
 
     if (USE_SQLITE) {
       sql = `SELECT ${MAP_COLUMNS} FROM hospital_directory 
              WHERE latitude IS NOT NULL AND longitude IS NOT NULL 
              AND latitude BETWEEN ? AND ? 
              AND longitude BETWEEN ? AND ?
-             AND id IN (${DEMO_HOSPITAL_IDS.join(',')})
+             AND id IN (${activeIds.join(',')})
              LIMIT 1000`;
       params = bounds;
     } else {
@@ -200,7 +205,7 @@ router.get('/nearby', async (req, res) => {
              WHERE latitude IS NOT NULL AND longitude IS NOT NULL 
              AND latitude BETWEEN $1 AND $2 
              AND longitude BETWEEN $3 AND $4
-             AND id IN (${DEMO_HOSPITAL_IDS.join(',')})
+             AND id IN (${activeIds.join(',')})
              LIMIT 1000`;
       params = bounds;
     }
@@ -212,6 +217,7 @@ router.get('/nearby', async (req, res) => {
       meta: {
         source: 'Government Hospital Directory',
         type: 'map_markers',
+        controlled_network: isControlled ? 'three_hospital_groups' : 'default',
         count: dataResult.rows.length
       }
     });

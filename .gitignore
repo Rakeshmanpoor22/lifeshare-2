@@ -26,38 +26,9 @@ dist/
 *.log
 npm-debug.log*
 
-# Dependencies
-node_modules/
-client/node_modules/
-server/node_modules/
-
-# Environment variables
-server/.env
-client/.env
-.env
-.env.*
-!.env.example
-
-# Database files
-server/lifeshare.db
-*.db
-*.sqlite
-*.sqlite3
-server/lifeshare.db.backup
-
-# Build output
-client/dist/
-client/build/
-dist/
-
-# Logs
-*.log
-npm-debug.log*
-
 # OS files
 .DS_Store
 Thumbs.db
 
 # Vite cache
 client/.vite/
-data/

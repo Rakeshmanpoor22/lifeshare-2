@@ -72,7 +72,7 @@ async function runTests() {
 
     console.log('\n[ORGAN VALIDATION & AUTH]');
     // Login to get token
-    const loginRes = await post('/api/auth/login', { email: 'city@central.com', password: 'password123' });
+    const loginRes = await post('/api/auth/login', { email: 'yashoda@lifeshare.demo', password: 'password123' });
     assert(loginRes.status === 200 && loginRes.body.token, 'Test auth login successful', 'Login failed');
     const token = loginRes.body.token;
 

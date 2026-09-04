@@ -35,7 +35,6 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// Routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/resources', generalApiLimiter, resourceRoutes);
 app.use('/api/requests', generalApiLimiter, requestRoutes);
@@ -44,6 +43,11 @@ app.use('/api/hospitals', publicDirectoryLimiter, hospitalRoutes);  // Public ho
 app.use('/api/blood-banks', publicDirectoryLimiter, bloodBankRoutes);  // Public blood bank directory (government reference data)
 app.use('/api/appointments', generalApiLimiter, appointmentRoutes);
 app.use('/api/tracking', generalApiLimiter, trackingRoutes); // Phase 9.2
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), message: 'LifeShare backend operational' });
+});
 
 // Socket.io Real-time Setup
 const connectedHospitals = new Map(); // Store hospitalId -> socketId
@@ -75,20 +79,20 @@ io.on('connection', (socket) => {
       if (!identity) return;
 
       // Validate session exists
-      const sessionRes = await pool.query('SELECT reference_type, reference_id FROM tracking_sessions WHERE id = $1', [tracking_session_id]);
+      const sessionRes = await query('SELECT reference_type, reference_id FROM tracking_sessions WHERE id = $1', [tracking_session_id]);
       if (sessionRes.rows.length === 0) return;
       
       const { reference_type, reference_id } = sessionRes.rows[0];
       let isAuth = false;
 
       if (reference_type === 'organ_transfer' && identity.type === 'hospital') {
-        const transRes = await pool.query(
+        const transRes = await query(
           'SELECT id FROM transactions WHERE request_id = $1 AND (donor_hospital_id = $2 OR recipient_hospital_id = $2)',
           [reference_id, identity.id]
         );
         isAuth = transRes.rows.length > 0;
       } else if (reference_type === 'blood_appointment' && identity.type === 'patient') {
-        const apptRes = await pool.query(
+        const apptRes = await query(
           'SELECT id FROM appointments WHERE id = $1 AND session_token = $2',
           [reference_id, identity.sessionToken]
         );
@@ -132,7 +136,7 @@ server.listen(PORT, async () => {
   if (!USE_SQLITE) {
     try {
       // Basic connectivity check for PostgreSQL
-      await pool.query('SELECT NOW()');
+      await query('SELECT NOW()');
       console.log('PostgreSQL connected successfully.');
     } catch (err) {
       console.error('Failed to connect to PostgreSQL:', err.message);

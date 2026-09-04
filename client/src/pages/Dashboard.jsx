@@ -50,7 +50,12 @@ const Dashboard = () => {
       toast.success('Request accepted! Transaction logged.');
       fetchData(); // Refresh data
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to accept request.');
+      if (err.response?.status === 404 || err.response?.data?.error?.includes('already processed')) {
+        toast.error('Request already processed. Removing from pending list.');
+        setIncomingRequests(prev => prev.filter(r => r.id !== id));
+      } else {
+        toast.error(err.response?.data?.error || 'Failed to accept request.');
+      }
     }
   };
 
@@ -306,7 +311,7 @@ const Dashboard = () => {
           <section className="card p-6 space-y-6 border-t-8 border-primary-600">
             <h2 className="text-lg font-bold text-slate-900 flex items-center justify-between">
               Incoming Requests
-              <span className="bg-primary-100 text-primary-600 px-2 py-0.5 rounded-full text-xs">{incomingRequests.length}</span>
+              <span className="bg-primary-100 text-primary-600 px-2 py-0.5 rounded-full text-xs font-bold">{incomingRequests.length}</span>
             </h2>
             
             <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
@@ -324,13 +329,22 @@ const Dashboard = () => {
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-bold text-slate-900">{req.requester_name || 'Unknown Hospital'}</p>
-                      <p className="text-xs text-slate-500 uppercase tracking-tight">{(req.resource_type || 'Item')} - {(req.urgency || 'Normal')}</p>
+                      <p className="text-xs font-black uppercase text-primary-600 tracking-wider">
+                        {req.resource_type?.toUpperCase()} — {req.requested_item_type?.toUpperCase() || 'ITEM'}
+                      </p>
+                      {req.requested_blood_group && (
+                        <p className="text-xs font-bold text-red-600 bg-red-50 inline-block px-1.5 py-0.5 rounded mt-0.5">
+                          Blood Group: {req.requested_blood_group}
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-500 mt-1">Requested by: <span className="font-bold text-slate-800">{req.requester_name || 'Unknown Hospital'}</span></p>
                     </div>
-                    {req.urgency === 'critical' && <AlertTriangle className="w-4 h-4 text-red-500 animate-bounce" />}
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${req.urgency === 'critical' ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-amber-100 text-amber-800'}`}>
+                      Urgency: {req.urgency?.toUpperCase()}
+                    </span>
                   </div>
-                  <p className="text-sm text-slate-600 italic">"{req.notes || 'Emergency request'}"</p>
-                  <div className="flex gap-2">
+                  {req.notes && <p className="text-xs text-slate-600 italic">"{req.notes}"</p>}
+                  <div className="flex gap-2 pt-1">
                     <button 
                       onClick={() => handleAcceptRequest(req.id)}
                       className="flex-1 py-2 bg-primary-600 text-white rounded-lg text-xs font-bold hover:bg-primary-700 shadow-sm"
@@ -366,7 +380,9 @@ const Dashboard = () => {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">Case #{req.id.toString().padStart(5, '0')}</span>
-                      <p className="font-bold text-slate-900 capitalize text-sm">{req.resource_type} Request</p>
+                      <p className="font-bold text-slate-900 capitalize text-sm">
+                        {req.resource_type?.toUpperCase()} — {req.requested_item_type || 'Requested Item'} {req.requested_blood_group ? `(${req.requested_blood_group})` : ''}
+                      </p>
                     </div>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${req.status === 'matched' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                       {req.status}

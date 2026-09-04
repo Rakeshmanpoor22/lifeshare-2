@@ -5,7 +5,7 @@ const auth = require('../middleware/auth');
 
 // Create a resource request (Hospital Only)
 router.post('/', auth, async (req, res) => {
-  const { resource_type, target_resource_id, urgency, notes } = req.body;
+  let { resource_type, target_resource_id, urgency, notes, requested_item_type, requested_blood_group, organ_type, item_type, blood_group, waitlist_item } = req.body;
   const hospitalId = req.hospital.id;
 
   // Validation
@@ -26,24 +26,43 @@ router.post('/', auth, async (req, res) => {
   const normalizedResourceType = resource_type.toLowerCase();
   const normalizedUrgency = urgency.toLowerCase();
 
+  // Normalize requested item type and blood group
+  let finalItemType = requested_item_type || organ_type || item_type || waitlist_item || null;
+  let finalBloodGroup = requested_blood_group || blood_group || null;
+
   try {
     if (target_resource_id) {
       let resourceTable = 'organs';
       if (normalizedResourceType === 'equipment') resourceTable = 'equipment';
       if (normalizedResourceType === 'blood') resourceTable = 'blood';
 
-      const checkRes = await query(`SELECT id FROM ${resourceTable} WHERE id = $1`, [target_resource_id]);
+      const checkRes = await query(`SELECT * FROM ${resourceTable} WHERE id = $1`, [target_resource_id]);
       if (checkRes.rows.length === 0) {
         return res.status(404).json({ error: `Selected ${normalizedResourceType} resource not found.` });
+      }
+
+      // Populate requested item type and blood group from target resource if not explicitly passed
+      const targetRes = checkRes.rows[0];
+      if (normalizedResourceType === 'organ') {
+        if (!finalItemType) finalItemType = targetRes.type;
+        if (!finalBloodGroup) finalBloodGroup = targetRes.blood_group;
+      } else if (normalizedResourceType === 'equipment') {
+        if (!finalItemType) finalItemType = targetRes.type;
+        if (!finalBloodGroup) finalBloodGroup = targetRes.model;
+      } else if (normalizedResourceType === 'blood') {
+        if (!finalItemType) finalItemType = 'Blood Unit';
+        if (!finalBloodGroup) finalBloodGroup = targetRes.blood_group;
       }
     }
 
     const result = await query(
-      'INSERT INTO requests (hospital_id, resource_type, target_resource_id, urgency, notes) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [hospitalId, normalizedResourceType, target_resource_id, normalizedUrgency, notes]
+      `INSERT INTO requests (hospital_id, resource_type, target_resource_id, urgency, notes, requested_item_type, requested_blood_group) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [hospitalId, normalizedResourceType, target_resource_id, normalizedUrgency, notes, finalItemType, finalBloodGroup]
     );
 
-    const requestId = result.rows[0].id;
+    const requestRow = result.rows[0];
+    const requestId = requestRow.id;
     await logAudit('Create Request', hospitalId, { resource_type: normalizedResourceType, target_resource_id, urgency: normalizedUrgency });
 
     // Matching Logic (Notification Push)
@@ -59,7 +78,8 @@ router.post('/', auth, async (req, res) => {
         const io = req.app.get('io');
         const connectedHospitals = req.app.get('connectedHospitals');
 
-        const message = `${req.hospital.name} has requested your ${normalizedResourceType} (ID: ${target_resource_id}) with ${normalizedUrgency} urgency.`;
+        const itemDesc = [finalItemType, finalBloodGroup].filter(Boolean).join(' ');
+        const message = `${req.hospital.name} has requested your ${normalizedResourceType}${itemDesc ? ` (${itemDesc})` : ''} with ${normalizedUrgency} urgency.`;
 
         await query(
           'INSERT INTO notifications (hospital_id, message, type) VALUES ($1, $2, $3)',
@@ -75,7 +95,7 @@ router.post('/', auth, async (req, res) => {
       }
     }
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(requestRow);
   } catch (err) {
     console.error('Request Error:', err);
     res.status(500).json({ error: 'Failed to create request.' });
@@ -89,10 +109,15 @@ router.get('/my', auth, async (req, res) => {
     const result = await query(`
       SELECT 
         r.*,
+        COALESCE(r.requested_item_type, o.type, e.type, 'Blood Unit') as requested_item_type,
+        COALESCE(r.requested_blood_group, o.blood_group, b.blood_group, e.model) as requested_blood_group,
         t.id as transaction_id,
         t.timestamp as accepted_at,
         dh.name as donor_hospital_name
       FROM requests r
+      LEFT JOIN organs o ON r.resource_type = 'organ' AND r.target_resource_id = o.id
+      LEFT JOIN equipment e ON r.resource_type = 'equipment' AND r.target_resource_id = e.id
+      LEFT JOIN blood b ON r.resource_type = 'blood' AND r.target_resource_id = b.id
       LEFT JOIN transactions t ON t.request_id = r.id
       LEFT JOIN hospitals dh ON t.donor_hospital_id = dh.id
       WHERE r.hospital_id = $1
@@ -105,15 +130,22 @@ router.get('/my', auth, async (req, res) => {
   }
 });
 
-// Get incoming requests (for a donor hospital)
+// Get incoming requests (for a donor hospital) — ONLY active pending requests
 router.get('/incoming', auth, async (req, res) => {
   const hospitalId = req.hospital.id;
   try {
     const result = await query(`
-      SELECT r.*, h.name as requester_name
+      SELECT 
+        r.*,
+        COALESCE(r.requested_item_type, o.type, e.type, 'Blood Unit') as requested_item_type,
+        COALESCE(r.requested_blood_group, o.blood_group, b.blood_group, e.model) as requested_blood_group,
+        h.name as requester_name
       FROM requests r
       JOIN hospitals h ON r.hospital_id = h.id
-      WHERE (
+      LEFT JOIN organs o ON r.resource_type = 'organ' AND r.target_resource_id = o.id
+      LEFT JOIN equipment e ON r.resource_type = 'equipment' AND r.target_resource_id = e.id
+      LEFT JOIN blood b ON r.resource_type = 'blood' AND r.target_resource_id = b.id
+      WHERE r.status = 'pending' AND (
         (r.resource_type = 'organ' AND r.target_resource_id IN (SELECT id FROM organs WHERE hospital_id = $1))
         OR
         (r.resource_type = 'equipment' AND r.target_resource_id IN (SELECT id FROM equipment WHERE hospital_id = $1))
@@ -179,16 +211,27 @@ router.post('/:id/accept', auth, async (req, res) => {
 
     await query('COMMIT');
 
-    // Real-time notification to recipient
+    // Real-time notification to requester/donor
     const io = req.app.get('io');
     const connectedHospitals = req.app.get('connectedHospitals');
-    const message = `Your request for ${request.resource_type} has been ACCEPTED by ${req.hospital.name}. Transaction logged.`;
+    const itemDesc = [request.requested_item_type, request.requested_blood_group].filter(Boolean).join(' ');
+    const message = `${itemDesc || request.resource_type} request accepted by ${req.hospital.name}.`;
+
+    const notifPayload = {
+      message,
+      type: 'update',
+      request_id: parseInt(requestId, 10),
+      organ_type: request.requested_item_type || 'Organ',
+      blood_group: request.requested_blood_group || '',
+      accepting_hospital: req.hospital.name,
+      timestamp: new Date()
+    };
 
     await query('INSERT INTO notifications (hospital_id, message, type) VALUES ($1, $2, $3)', [request.hospital_id, message, 'update']);
     if (connectedHospitals) {
       const recipientSocketId = connectedHospitals.get(request.hospital_id.toString());
       if (recipientSocketId && io) {
-        io.to(recipientSocketId).emit('new_notification', { message, type: 'update', timestamp: new Date() });
+        io.to(recipientSocketId).emit('new_notification', notifPayload);
       }
     }
 
@@ -215,15 +258,23 @@ router.get('/:id/transaction', auth, async (req, res) => {
         t.resource_type,
         t.resource_id,
         t.timestamp as accepted_at,
-        dh.name as donor_name,
-        dh.city as donor_city,
-        dh.state as donor_state,
-        rh.name as recipient_name,
-        rh.city as recipient_city,
-        rh.state as recipient_state
+        COALESCE(dhd.hospital_name, dh.name) as donor_name,
+        COALESCE(dhd.address, dh.address) as donor_address,
+        COALESCE(dhd.town, dh.city) as donor_city,
+        COALESCE(dhd.state, dh.state) as donor_state,
+        dhd.latitude as donor_latitude,
+        dhd.longitude as donor_longitude,
+        COALESCE(rhd.hospital_name, rh.name) as recipient_name,
+        COALESCE(rhd.address, rh.address) as recipient_address,
+        COALESCE(rhd.town, rh.city) as recipient_city,
+        COALESCE(rhd.state, rh.state) as recipient_state,
+        rhd.latitude as recipient_latitude,
+        rhd.longitude as recipient_longitude
       FROM transactions t
       JOIN hospitals dh ON t.donor_hospital_id = dh.id
+      LEFT JOIN hospital_directory dhd ON dh.hospital_directory_id = dhd.id
       JOIN hospitals rh ON t.recipient_hospital_id = rh.id
+      LEFT JOIN hospital_directory rhd ON rh.hospital_directory_id = rhd.id
       WHERE t.request_id = $1
         AND (t.donor_hospital_id = $2 OR t.recipient_hospital_id = $2)
     `, [requestId, hospitalId]);
@@ -231,7 +282,32 @@ router.get('/:id/transaction', auth, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Transaction not found or you are not authorized.' });
     }
-    res.json(result.rows[0]);
+
+    const tx = result.rows[0];
+    const sourceHospital = {
+      id: tx.donor_hospital_id,
+      name: tx.donor_name,
+      address: tx.donor_address,
+      city: tx.donor_city,
+      state: tx.donor_state,
+      latitude: tx.donor_latitude,
+      longitude: tx.donor_longitude
+    };
+    const destinationHospital = {
+      id: tx.recipient_hospital_id,
+      name: tx.recipient_name,
+      address: tx.recipient_address,
+      city: tx.recipient_city,
+      state: tx.recipient_state,
+      latitude: tx.recipient_latitude,
+      longitude: tx.recipient_longitude
+    };
+
+    res.json({
+      ...tx,
+      source_hospital: sourceHospital,
+      destination_hospital: destinationHospital
+    });
   } catch (err) {
     console.error('Fetch Transaction Error:', err);
     res.status(500).json({ error: 'Failed to fetch transaction details.' });
@@ -249,9 +325,17 @@ router.get('/:id', auth, async (req, res) => {
 
   try {
     const result = await query(`
-      SELECT r.*, h.name as requester_name, h.email, h.contact_number, h.city, h.state
+      SELECT r.*, 
+             COALESCE(hd.hospital_name, h.name) as requester_name, 
+             COALESCE(hd.address, h.address) as requester_address,
+             hd.latitude as requester_latitude,
+             hd.longitude as requester_longitude,
+             h.email, h.contact_number, 
+             COALESCE(hd.town, h.city) as city, 
+             COALESCE(hd.state, h.state) as state
       FROM requests r
       JOIN hospitals h ON r.hospital_id = h.id
+      LEFT JOIN hospital_directory hd ON h.hospital_directory_id = hd.id
       WHERE r.id = $1
     `, [requestId]);
 
@@ -268,9 +352,16 @@ router.get('/:id', auth, async (req, res) => {
       if (request.resource_type === 'blood') resourceTable = 'blood';
 
       const resInfo = await query(`
-        SELECT res.*, h.name as hospital_name, h.city, h.state
+        SELECT res.*, 
+               COALESCE(hd.hospital_name, h.name) as hospital_name,
+               COALESCE(hd.address, h.address) as hospital_address,
+               hd.latitude as hospital_latitude,
+               hd.longitude as hospital_longitude,
+               COALESCE(hd.town, h.city) as city, 
+               COALESCE(hd.state, h.state) as state
         FROM ${resourceTable} res
         JOIN hospitals h ON res.hospital_id = h.id
+        LEFT JOIN hospital_directory hd ON h.hospital_directory_id = hd.id
         WHERE res.id = $1
       `, [request.target_resource_id]);
 
@@ -279,8 +370,11 @@ router.get('/:id', auth, async (req, res) => {
         donorHospital = {
           id: resInfo.rows[0].hospital_id,
           name: resInfo.rows[0].hospital_name,
+          address: resInfo.rows[0].hospital_address,
           city: resInfo.rows[0].city,
-          state: resInfo.rows[0].state
+          state: resInfo.rows[0].state,
+          latitude: resInfo.rows[0].hospital_latitude,
+          longitude: resInfo.rows[0].hospital_longitude
         };
       }
     }
@@ -299,9 +393,35 @@ router.get('/:id', auth, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized access to this request.' });
     }
 
+    // Build structured requested_resource and matched_resource
+    const requestedResource = {
+      type: request.resource_type,
+      organ_type: request.requested_item_type || resourceDetails?.type || 'Blood Unit',
+      item_type: request.requested_item_type || resourceDetails?.type || 'Blood Unit',
+      blood_group: request.requested_blood_group || resourceDetails?.blood_group || resourceDetails?.model || null
+    };
+
+    let matchedResource = null;
+    if (resourceDetails) {
+      matchedResource = {
+        type: request.resource_type,
+        organ_type: resourceDetails.type,
+        item_type: resourceDetails.type,
+        blood_group: resourceDetails.blood_group,
+        model: resourceDetails.model,
+        units: resourceDetails.units,
+        hospital: donorHospital
+      };
+    }
+
     const responsePayload = {
       ...request,
+      requested_item_type: requestedResource.item_type,
+      requested_blood_group: requestedResource.blood_group,
+      requested_resource: requestedResource,
+      matched_resource: matchedResource,
       is_donor: isDonor,
+      is_requester: isRequester,
       donor_hospital: donorHospital,
       resource_details: resourceDetails
     };

@@ -167,9 +167,10 @@ npm run import:bloodbanks
 
 ### 6. Seed Demo Data
 ```bash
-cd server && npm run seed
-```
-> Demo login: `city@central.com` / `password123`
+> Demo logins:
+> - **Yashoda Hospital — Somajiguda**: `yashoda@lifeshare.demo` / `password123`
+> - **Apollo Hospitals — Jubilee Hills**: `apollo@lifeshare.demo` / `password123`
+> - **Kamineni Hospital — L.B. Nagar**: `kamineni@lifeshare.demo` / `password123`
 
 ### 7. Run the App
 

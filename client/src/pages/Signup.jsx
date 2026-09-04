@@ -94,7 +94,7 @@ const Signup = () => {
                 <label className="text-sm font-semibold text-slate-700">Hospital Name</label>
                 <div className="relative">
                   <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input required name="name" onChange={handleChange} className="input-field pl-10" placeholder="City Central Hospital" />
+                  <input required name="name" onChange={handleChange} className="input-field pl-10" placeholder="Yashoda Hospital — Somajiguda" />
                 </div>
               </div>
 

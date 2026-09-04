@@ -58,8 +58,16 @@ const RequestResource = () => {
     try {
       const submissionData = { ...formData };
       if (submissionData.target_resource_id === 'waitlist') {
-          submissionData.target_resource_id = null;
-          submissionData.notes = `[WAITLIST FOR: ${submissionData.waitlist_item}] ` + submissionData.notes;
+        submissionData.target_resource_id = null;
+        submissionData.requested_item_type = formData.waitlist_item;
+        submissionData.requested_blood_group = null;
+        submissionData.notes = `[WAITLIST FOR: ${submissionData.waitlist_item}] ` + submissionData.notes;
+      } else {
+        const selectedItem = currentSelectionList.find(i => String(i.id) === String(formData.target_resource_id));
+        if (selectedItem) {
+          submissionData.requested_item_type = selectedItem.type || (formData.resource_type === 'blood' ? 'Blood Unit' : null);
+          submissionData.requested_blood_group = selectedItem.blood_group || selectedItem.model || null;
+        }
       }
 
       await api.post('/requests', submissionData);

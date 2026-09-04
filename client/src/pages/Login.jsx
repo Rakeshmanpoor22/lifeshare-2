@@ -52,7 +52,7 @@ const Login = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="input-field pl-11" 
-                placeholder="admin@hospital.com" 
+                placeholder="yashoda@lifeshare.demo" 
               />
             </div>
           </div>

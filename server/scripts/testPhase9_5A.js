@@ -1,11 +1,11 @@
-const { Pool } = require('pg');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+const { query } = require('../db');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-require('dotenv').config();
 
 const API_BASE = 'http://localhost:5000/api';
 const JWT_SECRET = process.env.JWT_SECRET || 'lifeshare_secret_key';
-const db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 async function runTests() {
   console.log('==================================================');
@@ -43,7 +43,7 @@ async function runTests() {
     const passwordHash = await bcrypt.hash('TestPass123!', 10);
 
     // Hospital A (Requester)
-    const hospARes = await db.query(
+    const hospARes = await query(
       `INSERT INTO hospitals (name, registration_id, address, city, state, country, contact_number, email, organisation_size, owner_name, license_number, password_hash)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, name`,
       [`TestHospA_${ts}`, `REGA${ts}`, '123 Test St', 'Delhi', 'Delhi', 'India',
@@ -53,7 +53,7 @@ async function runTests() {
     cleanupHospitalIds.push(hospA.id);
 
     // Hospital B (Donor)
-    const hospBRes = await db.query(
+    const hospBRes = await query(
       `INSERT INTO hospitals (name, registration_id, address, city, state, country, contact_number, email, organisation_size, owner_name, license_number, password_hash)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, name`,
       [`TestHospB_${ts}`, `REGB${ts}`, '456 Test St', 'Delhi', 'Delhi', 'India',
@@ -63,7 +63,7 @@ async function runTests() {
     cleanupHospitalIds.push(hospB.id);
 
     // Hospital C (Unrelated — for IDOR)
-    const hospCRes = await db.query(
+    const hospCRes = await query(
       `INSERT INTO hospitals (name, registration_id, address, city, state, country, contact_number, email, organisation_size, owner_name, license_number, password_hash)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, name`,
       [`TestHospC_${ts}`, `REGC${ts}`, '789 Test St', 'Delhi', 'Delhi', 'India',
@@ -84,8 +84,8 @@ async function runTests() {
 
     // ── Create a live organ owned by Hospital B ────────────────────────────
     console.log('\n[RESOURCES] Hospital B posting available organ...');
-    const organRes = await db.query(
-      `INSERT INTO organs (hospital_id, type, blood_group, status) VALUES ($1, 'Kidney', 'O+', 'available') RETURNING *`,
+    const organRes = await query(
+      `INSERT INTO organs (hospital_id, type, blood_group, status) VALUES ($1, 'Kidney', 'O+', 'available') RETURNING id`,
       [hospB.id]
     );
     const organId = organRes.rows[0].id;
@@ -258,7 +258,7 @@ async function runTests() {
     assert(afterAcceptData.status === 'matched', "Request status updated to 'matched'");
 
     // Verify organ resource is now 'reserved'
-    const reservedCheck = await db.query('SELECT status FROM organs WHERE id = $1', [organId]);
+    const reservedCheck = await query('SELECT status FROM organs WHERE id = $1', [organId]);
     assert(reservedCheck.rows[0].status === 'reserved', "Organ status updated to 'reserved'");
 
     // ════════════════════════════════════════════════════════════════════════
@@ -285,7 +285,7 @@ async function runTests() {
     assert(res.status === 404, 'Transaction inaccessible to unrelated Hospital C (404)');
 
     // Notification was generated for recipient
-    const notifCheck = await db.query(
+    const notifCheck = await query(
       `SELECT COUNT(*) FROM notifications WHERE hospital_id = $1`,
       [hospA.id]
     );
@@ -345,15 +345,15 @@ async function runTests() {
     // ════════════════════════════════════════════════════════════════════════
     console.log('\n--- TEST GROUP 12: Resource Separation ---');
 
-    const liveBlood = await db.query('SELECT COUNT(*) FROM blood');
-    const dirBlood = await db.query('SELECT COUNT(*) FROM blood_bank_directory');
+    const liveBlood = await query('SELECT COUNT(*) FROM blood');
+    const dirBlood = await query('SELECT COUNT(*) FROM blood_bank_directory');
     assert(
       parseInt(liveBlood.rows[0].count) < parseInt(dirBlood.rows[0].count),
       `Live blood (${liveBlood.rows[0].count}) separate from blood_bank_directory (${dirBlood.rows[0].count})`
     );
 
-    const liveEquip = await db.query('SELECT COUNT(*) FROM equipment');
-    const catEquip = await db.query('SELECT COUNT(*) FROM equipment_catalog');
+    const liveEquip = await query('SELECT COUNT(*) FROM equipment');
+    const catEquip = await query('SELECT COUNT(*) FROM equipment_catalog');
     assert(
       parseInt(liveEquip.rows[0].count) < parseInt(catEquip.rows[0].count),
       `Live equipment (${liveEquip.rows[0].count}) separate from equipment_catalog (${catEquip.rows[0].count})`
@@ -364,10 +364,10 @@ async function runTests() {
     // ════════════════════════════════════════════════════════════════════════
     console.log('\n--- TEST GROUP 13: Database Integrity ---');
 
-    const hdCount = await db.query('SELECT COUNT(*) FROM hospital_directory');
+    const hdCount = await query('SELECT COUNT(*) FROM hospital_directory');
     assert(parseInt(hdCount.rows[0].count) >= 30273, `Hospital directory intact (${hdCount.rows[0].count})`);
 
-    const bbdCount = await db.query('SELECT COUNT(*) FROM blood_bank_directory');
+    const bbdCount = await query('SELECT COUNT(*) FROM blood_bank_directory');
     assert(parseInt(bbdCount.rows[0].count) >= 2947, `Blood bank directory intact (${bbdCount.rows[0].count})`);
 
   } catch (err) {
@@ -378,21 +378,21 @@ async function runTests() {
     console.log('\n[CLEANUP] Removing test data...');
     try {
       for (const id of cleanupTrackingIds) {
-        await db.query('DELETE FROM tracking_sessions WHERE id = $1', [id]);
+        await query('DELETE FROM tracking_sessions WHERE id = $1', [id]);
       }
       for (const id of cleanupTransactionIds) {
-        await db.query('DELETE FROM transactions WHERE id = $1', [id]);
+        await query('DELETE FROM transactions WHERE id = $1', [id]);
       }
       for (const id of cleanupRequestIds) {
-        await db.query('DELETE FROM requests WHERE id = $1', [id]);
+        await query('DELETE FROM requests WHERE id = $1', [id]);
       }
       for (const id of cleanupOrganIds) {
-        await db.query('DELETE FROM organs WHERE id = $1', [id]);
+        await query('DELETE FROM organs WHERE id = $1', [id]);
       }
       for (const id of cleanupHospitalIds) {
-        await db.query('DELETE FROM notifications WHERE hospital_id = $1', [id]);
-        await db.query('DELETE FROM audit_logs WHERE hospital_id = $1', [id]).catch(() => {});
-        await db.query('DELETE FROM hospitals WHERE id = $1', [id]);
+        await query('DELETE FROM notifications WHERE hospital_id = $1', [id]);
+        await query('DELETE FROM audit_logs WHERE hospital_id = $1', [id]).catch(() => {});
+        await query('DELETE FROM hospitals WHERE id = $1', [id]);
       }
       console.log('  ✅ Test data cleaned up.');
     } catch (cleanupErr) {
@@ -408,7 +408,6 @@ async function runTests() {
     }
     console.log('==================================================\n');
 
-    db.end();
     if (failed > 0) process.exit(1);
   }
 }

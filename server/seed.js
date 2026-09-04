@@ -26,17 +26,17 @@ const seed = async () => {
 
     // 3. Create Hospitals
     const hospitals = [
-      { name: 'City Central Hospital', regId: 'REG001', city: 'Mumbai', contact: '022-1234567', email: 'city@central.com' },
-      { name: 'Grace Memorial', regId: 'REG002', city: 'Delhi', contact: '011-7654321', email: 'grace@memorial.com' },
-      { name: 'Lifeline Wellness', regId: 'REG003', city: 'Bangalore', contact: '080-9999888', email: 'lifeline@wellness.com' }
+      { name: 'Yashoda Hospital — Somajiguda', regId: 'REG001', city: 'Hyderabad', contact: '040-23456789', email: 'yashoda@lifeshare.demo', dirId: 568 },
+      { name: 'Apollo Hospitals — Jubilee Hills', regId: 'REG002', city: 'Hyderabad', contact: '040-12345678', email: 'apollo@lifeshare.demo', dirId: 564 },
+      { name: 'Kamineni Hospital — L.B. Nagar', regId: 'REG003', city: 'Hyderabad', contact: '040-99998888', email: 'kamineni@lifeshare.demo', dirId: 567 }
     ];
 
     const hospitalIds = [];
     for (const h of hospitals) {
       const res = await query(
-        `INSERT INTO hospitals (name, registration_id, address, city, state, country, contact_number, email, organisation_size, owner_name, password_hash)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-        [h.name, h.regId, 'Hospital Avenue', h.city, h.city, 'India', h.contact, h.email, 'Large', 'Dr. Smith', passwordHash]
+        `INSERT INTO hospitals (name, registration_id, address, city, state, country, contact_number, email, organisation_size, owner_name, password_hash, hospital_directory_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+        [h.name, h.regId, 'Hospital Avenue', h.city, 'Telangana', 'India', h.contact, h.email, 'Large', 'Dr. Smith', passwordHash, h.dirId]
       );
       hospitalIds.push(res.rows[0].id);
     }
