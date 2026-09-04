@@ -9,12 +9,13 @@ if (USE_SQLITE) {
   console.log('Using SQLite for local development...');
   db = new sqlite3.Database(process.env.SQLITE_PATH || './lifeshare.db');
 } else {
+  const isLocalDb = (process.env.DATABASE_URL || '').includes('localhost') || (process.env.DATABASE_URL || '').includes('127.0.0.1');
   db = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/lifeshare',
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    ssl: isLocalDb ? false : { rejectUnauthorized: false },
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 5000,
   });
 }
 
